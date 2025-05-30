@@ -1,35 +1,25 @@
+# backend.py
+
 import os
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from google.cloud import aiplatform
+from PyPDF2 import PdfReader
 
 # Load env vars from .env
 load_dotenv()
 
 # Initialize FastAPI
-app = FastAPI(…)
+app = FastAPI(
+    title="SynthesisTalk Backend",
+    description="FastAPI backend for the SynthesisTalk research assistant",
+    version="0.1.0",
+)
 
-# LLM tool with real Vertex AI client & model
-class LLMTool:
-    def __init__(self):
-        # Read from env
-        project = os.getenv("GCP_PROJECT")
-        region = os.getenv("GCP_REGION")
-        model_id = os.getenv("VERTEX_AI_MODEL_ID")
-        if not all([project, region, model_id]):
-            raise ValueError("Missing one of GCP_PROJECT, GCP_REGION, VERTEX_AI_MODEL_ID")
-        # Initialize client
-        aiplatform.init(project=project, location=region)
-        # Load the deployed model
-        self.endpoint = aiplatform.PredictionEndpoint(model=model_id)
+# --- Health check and LLMTool omitted for brevity ---
 
-    def call(self, prompt: str) -> str:
-        prediction = self.endpoint.predict(instances=[{"content": prompt}])
-        # Assuming the model returns {"content": "..."}
-        return prediction.predictions[0].get("content", "")
-
-# Request/response schemas remain the same…
+# --- LLM schemas omitted for brevity ---
 
 @app.post("/api/llm", response_model=LLMResponse)
 async def llm_endpoint(req: LLMRequest):
@@ -39,3 +29,34 @@ async def llm_endpoint(req: LLMRequest):
         return LLMResponse(response=answer)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- New Section: Document upload & extraction ---
+
+class DocumentResponse(BaseModel):
+    filename: str
+    text: str
+
+@app.post("/api/documents", response_model=DocumentResponse)
+async def upload_document(file: UploadFile = File(...)):
+    """
+    Accepts a PDF or plain-text file, extracts its text, and returns it.
+    """
+    try:
+        content = await file.read()
+        if file.content_type == "application/pdf":
+            reader = PdfReader(io.BytesIO(content))
+            text = ""
+            for page in reader.pages:
+                text += page.extract_text() or ""
+        elif file.content_type.startswith("text/"):
+            text = content.decode(errors="ignore")
+        else:
+            raise HTTPException(status_code=415, detail="Unsupported file type")
+
+        return DocumentResponse(filename=file.filename, text=text)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process document: {e}")
