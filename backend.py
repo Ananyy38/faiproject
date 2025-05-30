@@ -1,43 +1,40 @@
-# backend.py
+import os
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-
-# ── Existing imports and health-check omitted for brevity ──
-
-# 1. Import Vertex AI client
 from google.cloud import aiplatform
 
-app = FastAPI(
-    title="SynthesisTalk Backend",
-    description="FastAPI backend for the SynthesisTalk research assistant",
-    version="0.1.0",
-)
+# Load env vars from .env
+load_dotenv()
 
-# 2. Define a simple LLM tool interface
+# Initialize FastAPI
+app = FastAPI(…)
+
+# LLM tool with real Vertex AI client & model
 class LLMTool:
-    def __init__(self, project: str, region: str):
+    def __init__(self):
+        # Read from env
+        project = os.getenv("GCP_PROJECT")
+        region = os.getenv("GCP_REGION")
+        model_id = os.getenv("VERTEX_AI_MODEL_ID")
+        if not all([project, region, model_id]):
+            raise ValueError("Missing one of GCP_PROJECT, GCP_REGION, VERTEX_AI_MODEL_ID")
+        # Initialize client
         aiplatform.init(project=project, location=region)
-        self.model = None  # you’ll load or instantiate your model here
+        # Load the deployed model
+        self.endpoint = aiplatform.PredictionEndpoint(model=model_id)
 
     def call(self, prompt: str) -> str:
-        # placeholder logic
-        return f"[LLM response to: {prompt}]"
+        prediction = self.endpoint.predict(instances=[{"content": prompt}])
+        # Assuming the model returns {"content": "..."}
+        return prediction.predictions[0].get("content", "")
 
-# 3. Request/response schemas
-class LLMRequest(BaseModel):
-    prompt: str
+# Request/response schemas remain the same…
 
-class LLMResponse(BaseModel):
-    response: str
-
-# 4. Placeholder route
 @app.post("/api/llm", response_model=LLMResponse)
 async def llm_endpoint(req: LLMRequest):
-    """
-    Accepts a user prompt, dispatches to the LLM tool, and returns a response.
-    """
     try:
-        tool = LLMTool(project="YOUR_GCP_PROJECT", region="YOUR_GCP_REGION")
+        tool = LLMTool()
         answer = tool.call(req.prompt)
         return LLMResponse(response=answer)
     except Exception as e:

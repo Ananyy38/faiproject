@@ -45,3 +45,15 @@ This file covers all the “internal” steps for getting up and running.
 - **How to install** (PowerShell):
   ```powershell
   pip install -r requirements.txt
+
+  ### Vertex AI Authentication & Model
+
+1. Copy `.env.sample` to `.env` and fill in:
+   - `GOOGLE_APPLICATION_CREDENTIALS`
+   - `GCP_PROJECT`
+   - `GCP_REGION`
+   - `VERTEX_AI_MODEL_ID`
+
+2. Install/update deps:
+   ```powershell
+   pip install -r requirements.txt
