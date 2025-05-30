@@ -63,3 +63,13 @@ This file covers all the “internal” steps for getting up and running.
     pip install -r requirements.txt
     ```
 3.  **Backend endpoint**: Implement `/api/documents` in `backend/main.py` to handle file uploads and extract text from PDFs or plain text files.
+
+## Front end
+
+- **Frontend Dependencies:** Added `react`, `react-dom`, and `axios`.
+- **React Components:**
+  - `src/index.jsx`: Renders the main `App` component.
+  - `src/App.jsx`:
+    - Implements state management for prompt, LLM response, selected file, and extracted document text.
+    - Includes handlers for sending prompts to `/api/llm` and uploading files to `/api/documents`.
+    - Provides a simple UI for chatting with the LLM and uploading documents.
