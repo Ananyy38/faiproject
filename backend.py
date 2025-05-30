@@ -1,6 +1,5 @@
-# backend.py
-
 import os
+import io
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
@@ -16,6 +15,19 @@ app = FastAPI(
     description="FastAPI backend for the SynthesisTalk research assistant",
     version="0.1.0",
 )
+
+# --- Missing Pydantic Models ---
+class LLMRequest(BaseModel):
+    prompt: str
+
+class LLMResponse(BaseModel):
+    response: str
+
+# --- Placeholder LLMTool class ---
+class LLMTool:
+    def call(self, prompt: str) -> str:
+        # Placeholder implementation
+        return f"Response to: {prompt}"
 
 # --- Health check and LLMTool omitted for brevity ---
 

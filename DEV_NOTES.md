@@ -34,11 +34,6 @@ This file covers all the “internal” steps for getting up and running.
    # → {"status":"ok"}
    ```
 
-## Frontend
-
-> *To be filled in once we scaffold React.*
-
-
 ## LLM Integration Scaffolding
 
 - **New dependency**: `google-cloud-aiplatform>=1.26.0`
@@ -57,3 +52,14 @@ This file covers all the “internal” steps for getting up and running.
 2. Install/update deps:
    ```powershell
    pip install -r requirements.txt
+
+
+### Document Upload & Extraction
+
+1.  **New dependency**: `PyPDF2>=3.0.0`
+2.  **How to install** (PowerShell):
+    ```powershell
+    Add-Content -Path requirements.txt -Value 'PyPDF2>=3.0.0'
+    pip install -r requirements.txt
+    ```
+3.  **Backend endpoint**: Implement `/api/documents` in `backend/main.py` to handle file uploads and extract text from PDFs or plain text files.
