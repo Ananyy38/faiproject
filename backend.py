@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from google.cloud import aiplatform
+from vertexai.generative_models import GenerativeModel
+import vertexai
 from PyPDF2 import PdfReader
 
 # Load env vars from .env
@@ -16,23 +18,46 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# --- Missing Pydantic Models ---
+# Initialize Vertex AI
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
+LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+
+if PROJECT_ID:
+    vertexai.init(project=PROJECT_ID, location=LOCATION)
+
+# --- Pydantic Models ---
 class LLMRequest(BaseModel):
     prompt: str
 
 class LLMResponse(BaseModel):
     response: str
 
-# --- Placeholder LLMTool class ---
+class DocumentResponse(BaseModel):
+    filename: str
+    text: str
+
+# --- Actual LLMTool implementation ---
 class LLMTool:
+    def __init__(self):
+        if not PROJECT_ID:
+            raise ValueError("GOOGLE_CLOUD_PROJECT_ID environment variable is required")
+        
+        # Initialize the Gemini model
+        self.model = GenerativeModel("gemini-1.5-pro")
+    
     def call(self, prompt: str) -> str:
-        # Placeholder implementation
-        return f"Response to: {prompt}"
+        try:
+            response = self.model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            raise Exception(f"LLM call failed: {str(e)}")
 
-# --- Health check and LLMTool omitted for brevity ---
+# --- Health check endpoint ---
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "service": "SynthesisTalk Backend"}
 
-# --- LLM schemas omitted for brevity ---
-
+# --- LLM endpoint ---
 @app.post("/api/llm", response_model=LLMResponse)
 async def llm_endpoint(req: LLMRequest):
     try:
@@ -42,13 +67,7 @@ async def llm_endpoint(req: LLMRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# --- New Section: Document upload & extraction ---
-
-class DocumentResponse(BaseModel):
-    filename: str
-    text: str
-
+# --- Document upload & extraction ---
 @app.post("/api/documents", response_model=DocumentResponse)
 async def upload_document(file: UploadFile = File(...)):
     """
@@ -72,3 +91,7 @@ async def upload_document(file: UploadFile = File(...)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process document: {e}")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
