@@ -39,3 +39,9 @@ This file covers all the “internal” steps for getting up and running.
 > *To be filled in once we scaffold React.*
 
 
+## LLM Integration Scaffolding
+
+- **New dependency**: `google-cloud-aiplatform>=1.26.0`
+- **How to install** (PowerShell):
+  ```powershell
+  pip install -r requirements.txt
