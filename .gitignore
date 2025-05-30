@@ -1,0 +1,24 @@
+# OS and IDE-specific
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# Environment settings
+.env
+.env.local
+
+# Node.js
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
