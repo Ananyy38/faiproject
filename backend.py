@@ -3,9 +3,7 @@ import io
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
-from google.cloud import aiplatform
-from vertexai.generative_models import GenerativeModel
-import vertexai
+from groq import Groq
 from PyPDF2 import PdfReader
 
 # Load env vars from .env
@@ -18,12 +16,13 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Initialize Vertex AI
-PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
-LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+# Initialize Groq client
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-if PROJECT_ID:
-    vertexai.init(project=PROJECT_ID, location=LOCATION)
+if not GROQ_API_KEY:
+    raise ValueError("GROQ_API_KEY environment variable is required")
+
+groq_client = Groq(api_key=GROQ_API_KEY)
 
 # --- Pydantic Models ---
 class LLMRequest(BaseModel):
@@ -39,16 +38,20 @@ class DocumentResponse(BaseModel):
 # --- Actual LLMTool implementation ---
 class LLMTool:
     def __init__(self):
-        if not PROJECT_ID:
-            raise ValueError("GOOGLE_CLOUD_PROJECT_ID environment variable is required")
-        
-        # Initialize the Gemini model
-        self.model = GenerativeModel("gemini-1.5-pro")
+        self.client = groq_client
     
     def call(self, prompt: str) -> str:
         try:
-            response = self.model.generate_content(prompt)
-            return response.text
+            chat_completion = self.client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+                model="llama3-8b-8192",  # You can change this to other Groq models like "mixtral-8x7b-32768"
+            )
+            return chat_completion.choices[0].message.content
         except Exception as e:
             raise Exception(f"LLM call failed: {str(e)}")
 
