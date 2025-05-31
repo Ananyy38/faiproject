@@ -7,12 +7,16 @@ function App() {
   const [conversationHistory, setConversationHistory] = useState([]);
   const [file, setFile] = useState(null);
   const [docText, setDocText] = useState("");
+  const [includeSearch, setIncludeSearch] = useState(false); // New: search toggle
+  const [searchResults, setSearchResults] = useState(null); // New: search results
 
   // Loading and error states
   const [llmLoading, setLlmLoading] = useState(false);
   const [docLoading, setDocLoading] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [llmError, setLlmError] = useState("");
   const [docError, setDocError] = useState("");
+  const [searchError, setSearchError] = useState("");
 
   // Load conversation history on component mount
   useEffect(() => {
@@ -30,21 +34,27 @@ function App() {
     }
   };
 
-  // Send prompt to /api/llm with context
+  // Send prompt to /api/llm with context and optional search
   const handlePromptSubmit = async () => {
     if (!prompt.trim()) return;
 
     setLlmLoading(true);
     setLlmError("");
+    setSearchResults(null);
 
     try {
-      console.log("Sending LLM request:", { prompt, conversationId });
+      console.log("Sending LLM request:", {
+        prompt,
+        conversationId,
+        includeSearch,
+      });
       const res = await axios.post(
         "/api/llm",
         {
           prompt,
           conversation_id: conversationId,
           context: conversationHistory,
+          include_search: includeSearch,
         },
         {
           headers: {
@@ -57,6 +67,12 @@ function App() {
 
       // Update conversation history with the new response
       setConversationHistory(res.data.updated_context);
+
+      // Set search results if returned
+      if (res.data.search_results) {
+        setSearchResults(res.data.search_results);
+      }
+
       setPrompt(""); // Clear the input after successful submission
     } catch (err) {
       console.error("LLM Error:", err);
@@ -74,6 +90,35 @@ function App() {
     }
   };
 
+  // Standalone search function
+  const handleStandaloneSearch = async () => {
+    if (!prompt.trim()) return;
+
+    setSearchLoading(true);
+    setSearchError("");
+    setSearchResults(null);
+
+    try {
+      const res = await axios.post("/api/search", {
+        query: prompt,
+        max_results: 5,
+      });
+
+      setSearchResults(res.data.results);
+    } catch (err) {
+      console.error("Search Error:", err);
+      if (err.response) {
+        setSearchError(
+          `Search error: ${err.response.data.detail || err.response.statusText}`
+        );
+      } else {
+        setSearchError("Search failed: Unable to reach server");
+      }
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
   // Clear conversation
   const handleClearConversation = async () => {
     try {
@@ -81,6 +126,7 @@ function App() {
       setConversationHistory([]);
       setPrompt("");
       setLlmError("");
+      setSearchResults(null);
     } catch (err) {
       console.error("Error clearing conversation:", err);
     }
@@ -93,6 +139,7 @@ function App() {
     setConversationHistory([]);
     setPrompt("");
     setLlmError("");
+    setSearchResults(null);
   };
 
   // Store selected file
@@ -142,6 +189,8 @@ function App() {
   const handleKeyPress = (e) => {
     if (e.key === "Enter" && e.ctrlKey) {
       handlePromptSubmit();
+    } else if (e.key === "Enter" && e.shiftKey) {
+      handleStandaloneSearch();
     }
   };
 
@@ -154,7 +203,7 @@ function App() {
         margin: "0 auto",
       }}
     >
-      <h1>SynthesisTalk v1 - Context Management</h1>
+      <h1>SynthesisTalk v1.1 - With Web Search</h1>
 
       <section style={{ marginTop: 20 }}>
         <div
@@ -241,11 +290,83 @@ function App() {
           </div>
         )}
 
+        {/* Search Results Display */}
+        {searchResults && (
+          <div
+            style={{
+              marginBottom: "16px",
+              padding: "12px",
+              backgroundColor: "#fff3cd",
+              border: "1px solid #ffeaa7",
+              borderRadius: "4px",
+            }}
+          >
+            <h3
+              style={{
+                margin: "0 0 12px 0",
+                fontSize: "16px",
+                color: "#856404",
+              }}
+            >
+              🔍 Web Search Results
+            </h3>
+            {searchResults.map((result, index) => (
+              <div
+                key={index}
+                style={{
+                  marginBottom: "12px",
+                  padding: "8px",
+                  backgroundColor: "white",
+                  borderRadius: "4px",
+                  borderLeft: "3px solid #ffc107",
+                }}
+              >
+                <div style={{ fontWeight: "bold", marginBottom: "4px" }}>
+                  <a
+                    href={result.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: "#007bff", textDecoration: "none" }}
+                  >
+                    {result.title}
+                  </a>
+                </div>
+                <div
+                  style={{
+                    fontSize: "14px",
+                    color: "#666",
+                    marginBottom: "4px",
+                  }}
+                >
+                  {result.description}
+                </div>
+                <div style={{ fontSize: "12px", color: "#999" }}>
+                  {result.url}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ marginBottom: "8px" }}>
+          <label
+            style={{ display: "flex", alignItems: "center", fontSize: "14px" }}
+          >
+            <input
+              type="checkbox"
+              checked={includeSearch}
+              onChange={(e) => setIncludeSearch(e.target.checked)}
+              style={{ marginRight: "8px" }}
+            />
+            Include web search in response
+          </label>
+        </div>
+
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyPress={handleKeyPress}
-          placeholder="Ask me anything about your research topic... (Ctrl+Enter to send)"
+          placeholder="Ask me anything about your research topic... (Ctrl+Enter: Send with AI | Shift+Enter: Search only)"
           style={{
             width: "100%",
             height: 80,
@@ -253,23 +374,40 @@ function App() {
             border: "1px solid #ccc",
             borderRadius: "4px",
           }}
-          disabled={llmLoading}
+          disabled={llmLoading || searchLoading}
         />
-        <button
-          onClick={handlePromptSubmit}
-          style={{
-            marginTop: 8,
-            padding: "8px 16px",
-            backgroundColor: llmLoading ? "#ccc" : "#007bff",
-            color: "white",
-            border: "none",
-            borderRadius: "4px",
-            cursor: llmLoading ? "not-allowed" : "pointer",
-          }}
-          disabled={llmLoading || !prompt.trim()}
-        >
-          {llmLoading ? "Processing..." : "Send Message"}
-        </button>
+
+        <div style={{ marginTop: 8, display: "flex", gap: "8px" }}>
+          <button
+            onClick={handlePromptSubmit}
+            style={{
+              padding: "8px 16px",
+              backgroundColor: llmLoading ? "#ccc" : "#007bff",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: llmLoading ? "not-allowed" : "pointer",
+            }}
+            disabled={llmLoading || !prompt.trim()}
+          >
+            {llmLoading ? "Processing..." : "Send Message"}
+          </button>
+
+          <button
+            onClick={handleStandaloneSearch}
+            style={{
+              padding: "8px 16px",
+              backgroundColor: searchLoading ? "#ccc" : "#28a745",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: searchLoading ? "not-allowed" : "pointer",
+            }}
+            disabled={searchLoading || !prompt.trim()}
+          >
+            {searchLoading ? "Searching..." : "🔍 Search Web"}
+          </button>
+        </div>
 
         {llmError && (
           <div
@@ -283,6 +421,21 @@ function App() {
             }}
           >
             <strong>Error:</strong> {llmError}
+          </div>
+        )}
+
+        {searchError && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 8,
+              background: "#ffebee",
+              color: "#c62828",
+              border: "1px solid #ef9a9a",
+              borderRadius: "4px",
+            }}
+          >
+            <strong>Search Error:</strong> {searchError}
           </div>
         )}
       </section>
