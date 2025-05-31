@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 
 function App() {
   const [prompt, setPrompt] = useState("");
-  const [llmResponse, setLLMResponse] = useState("");
+  const [conversationId, setConversationId] = useState("default");
+  const [conversationHistory, setConversationHistory] = useState([]);
   const [file, setFile] = useState(null);
   const [docText, setDocText] = useState("");
 
@@ -13,27 +14,50 @@ function App() {
   const [llmError, setLlmError] = useState("");
   const [docError, setDocError] = useState("");
 
-  // Send prompt to /api/llm
+  // Load conversation history on component mount
+  useEffect(() => {
+    loadConversationHistory();
+  }, [conversationId]);
+
+  // Load conversation history from backend
+  const loadConversationHistory = async () => {
+    try {
+      const res = await axios.get(`/api/conversations/${conversationId}`);
+      setConversationHistory(res.data.messages || []);
+    } catch (err) {
+      console.log("No existing conversation found, starting fresh");
+      setConversationHistory([]);
+    }
+  };
+
+  // Send prompt to /api/llm with context
   const handlePromptSubmit = async () => {
     if (!prompt.trim()) return;
 
     setLlmLoading(true);
     setLlmError("");
-    setLLMResponse("");
 
     try {
-      console.log("Sending LLM request:", { prompt });
+      console.log("Sending LLM request:", { prompt, conversationId });
       const res = await axios.post(
         "/api/llm",
-        { prompt },
+        {
+          prompt,
+          conversation_id: conversationId,
+          context: conversationHistory,
+        },
         {
           headers: {
             "Content-Type": "application/json",
           },
         }
       );
+
       console.log("LLM response received:", res.data);
-      setLLMResponse(res.data.response);
+
+      // Update conversation history with the new response
+      setConversationHistory(res.data.updated_context);
+      setPrompt(""); // Clear the input after successful submission
     } catch (err) {
       console.error("LLM Error:", err);
       if (err.response) {
@@ -48,6 +72,27 @@ function App() {
     } finally {
       setLlmLoading(false);
     }
+  };
+
+  // Clear conversation
+  const handleClearConversation = async () => {
+    try {
+      await axios.delete(`/api/conversations/${conversationId}`);
+      setConversationHistory([]);
+      setPrompt("");
+      setLlmError("");
+    } catch (err) {
+      console.error("Error clearing conversation:", err);
+    }
+  };
+
+  // Start new conversation
+  const handleNewConversation = () => {
+    const newId = `conversation_${Date.now()}`;
+    setConversationId(newId);
+    setConversationHistory([]);
+    setPrompt("");
+    setLlmError("");
   };
 
   // Store selected file
@@ -105,19 +150,102 @@ function App() {
       style={{
         padding: 20,
         fontFamily: "sans-serif",
-        maxWidth: "1000px",
+        maxWidth: "1200px",
         margin: "0 auto",
       }}
     >
-      <h1>SynthesisTalk</h1>
+      <h1>SynthesisTalk v1 - Context Management</h1>
 
       <section style={{ marginTop: 20 }}>
-        <h2>LLM Chat</h2>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 16,
+          }}
+        >
+          <h2>Research Conversation</h2>
+          <div>
+            <button
+              onClick={handleNewConversation}
+              style={{
+                padding: "6px 12px",
+                backgroundColor: "#6c757d",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+                marginRight: 8,
+              }}
+            >
+              New Conversation
+            </button>
+            <button
+              onClick={handleClearConversation}
+              style={{
+                padding: "6px 12px",
+                backgroundColor: "#dc3545",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+              }}
+            >
+              Clear History
+            </button>
+          </div>
+        </div>
+
+        <div style={{ fontSize: "12px", color: "#666", marginBottom: 12 }}>
+          Conversation ID: {conversationId} | Messages:{" "}
+          {conversationHistory.length}
+        </div>
+
+        {/* Conversation History */}
+        {conversationHistory.length > 0 && (
+          <div
+            style={{
+              maxHeight: "400px",
+              overflowY: "auto",
+              border: "1px solid #ddd",
+              borderRadius: "4px",
+              padding: "12px",
+              marginBottom: "16px",
+              backgroundColor: "#f8f9fa",
+            }}
+          >
+            <h3 style={{ margin: "0 0 12px 0", fontSize: "16px" }}>
+              Conversation History
+            </h3>
+            {conversationHistory.map((message, index) => (
+              <div
+                key={index}
+                style={{
+                  marginBottom: "12px",
+                  padding: "8px",
+                  backgroundColor:
+                    message.role === "user" ? "#e3f2fd" : "#f1f8e9",
+                  borderRadius: "4px",
+                  borderLeft: `4px solid ${message.role === "user" ? "#2196f3" : "#4caf50"}`,
+                }}
+              >
+                <strong>
+                  {message.role === "user" ? "You" : "SynthesisTalk"}:
+                </strong>
+                <div style={{ marginTop: "4px", whiteSpace: "pre-wrap" }}>
+                  {message.content}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyPress={handleKeyPress}
-          placeholder="Type your prompt here... (Ctrl+Enter to send)"
+          placeholder="Ask me anything about your research topic... (Ctrl+Enter to send)"
           style={{
             width: "100%",
             height: 80,
@@ -140,7 +268,7 @@ function App() {
           }}
           disabled={llmLoading || !prompt.trim()}
         >
-          {llmLoading ? "Processing..." : "Send to LLM"}
+          {llmLoading ? "Processing..." : "Send Message"}
         </button>
 
         {llmError && (
@@ -155,24 +283,6 @@ function App() {
             }}
           >
             <strong>Error:</strong> {llmError}
-          </div>
-        )}
-
-        {llmResponse && (
-          <div style={{ marginTop: 12 }}>
-            <h3>Response:</h3>
-            <pre
-              style={{
-                padding: 8,
-                background: "#f0f0f0",
-                border: "1px solid #ddd",
-                borderRadius: "4px",
-                whiteSpace: "pre-wrap",
-                overflow: "auto",
-              }}
-            >
-              {llmResponse}
-            </pre>
           </div>
         )}
       </section>
