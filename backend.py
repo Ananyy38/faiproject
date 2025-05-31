@@ -2,13 +2,14 @@ import os
 import io
 import requests
 from typing import List, Dict, Optional
+from datetime import datetime
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from groq import Groq
 from PyPDF2 import PdfReader
 
-# Load env vars from .env
+# Load environment variables
 load_dotenv()
 
 # Initialize FastAPI
@@ -18,19 +19,22 @@ app = FastAPI(
     version="1.1.0",
 )
 
-# Initialize Groq client
+# Environment variables
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")  # Add to your .env file
+BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")
 
+# Validation
 if not GROQ_API_KEY:
     raise ValueError("GROQ_API_KEY environment variable is required")
 
 if not BRAVE_API_KEY:
     print("Warning: BRAVE_API_KEY not found. Web search will be disabled.")
 
+# Initialize Groq client
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# --- Pydantic Models ---
+# ==================== PYDANTIC MODELS ====================
+
 class Message(BaseModel):
     role: str  # "user" or "assistant"
     content: str
@@ -48,26 +52,36 @@ class SearchResponse(BaseModel):
     query: str
     results: List[SearchResult]
 
+class DocumentContext(BaseModel):
+    filename: str
+    content: str
+    upload_time: str
+
 class LLMRequest(BaseModel):
     prompt: str
     conversation_id: str = "default"
     context: List[Message] = []
-    include_search: bool = False  # New: whether to include web search
+    include_search: bool = False
+    document_context: Optional[str] = None
 
 class LLMResponse(BaseModel):
     response: str
     conversation_id: str
     updated_context: List[Message]
-    search_results: Optional[List[SearchResult]] = None  # New: search results if used
+    search_results: Optional[List[SearchResult]] = None
+    document_used: Optional[str] = None
 
 class DocumentResponse(BaseModel):
     filename: str
     text: str
 
-# --- In-memory conversation storage ---
-conversations: Dict[str, List[Message]] = {}
+# ==================== DATA STORAGE ====================
 
-# --- Web Search Tool ---
+conversations: Dict[str, List[Message]] = {}
+document_contexts: Dict[str, DocumentContext] = {}
+
+# ==================== TOOLS ====================
+
 class WebSearchTool:
     def __init__(self):
         self.api_key = BRAVE_API_KEY
@@ -91,7 +105,7 @@ class WebSearchTool:
                 "search_lang": "en",
                 "country": "us",
                 "safesearch": "moderate",
-                "freshness": "pm"  # Past month for more recent results
+                "freshness": "pm"
             }
             
             response = requests.get(self.base_url, headers=headers, params=params)
@@ -113,15 +127,15 @@ class WebSearchTool:
         except Exception as e:
             raise Exception(f"Web search failed: {str(e)}")
 
-# --- Enhanced LLM Tool ---
 class LLMTool:
     def __init__(self):
         self.client = groq_client
         self.search_tool = WebSearchTool() if BRAVE_API_KEY else None
     
-    def call(self, prompt: str, context: List[Message] = None, include_search: bool = False) -> tuple[str, Optional[List[SearchResult]]]:
+    def call(self, prompt: str, context: List[Message] = None, include_search: bool = False, document_context: str = None) -> tuple[str, Optional[List[SearchResult]], Optional[str]]:
         try:
             search_results = None
+            document_used = None
             
             # Perform web search if requested and available
             if include_search and self.search_tool:
@@ -129,15 +143,19 @@ class LLMTool:
                     search_results = self.search_tool.search(prompt, max_results=3)
                 except Exception as e:
                     print(f"Search failed: {e}")
-                    # Continue without search results rather than failing
             
             # Build messages array with context
             messages = []
             
-            # Add system message for research assistant behavior
+            # Enhanced system message
             system_message = """You are SynthesisTalk, an intelligent research assistant. You help users explore complex topics through conversation. Maintain context from previous messages and provide thoughtful, well-reasoned responses. If you reference previous parts of the conversation, be explicit about what you're referring to."""
             
-            # If we have search results, include them in the system prompt
+            # Add document context if provided
+            if document_context:
+                document_used = "Document content integrated"
+                system_message += f"\n\nYou have access to the following document content for reference:\n\n--- DOCUMENT CONTENT ---\n{document_context}\n--- END DOCUMENT ---\n\nUse this document content to provide more informed responses when relevant. Always indicate when you're referencing the uploaded document."
+            
+            # Add search results if available
             if search_results:
                 search_context = "\n\nWeb search results for your reference:\n"
                 for i, result in enumerate(search_results, 1):
@@ -171,18 +189,18 @@ class LLMTool:
                 max_tokens=1000
             )
             
-            return chat_completion.choices[0].message.content, search_results
+            return chat_completion.choices[0].message.content, search_results, document_used
             
         except Exception as e:
             raise Exception(f"LLM call failed: {str(e)}")
 
-# --- Helper functions ---
+# ==================== HELPER FUNCTIONS ====================
+
 def get_conversation_context(conversation_id: str, max_messages: int = 10) -> List[Message]:
     """Get the last N messages from a conversation for context"""
     if conversation_id not in conversations:
         conversations[conversation_id] = []
     
-    # Return last max_messages (keep recent context manageable)
     return conversations[conversation_id][-max_messages:]
 
 def update_conversation(conversation_id: str, user_message: str, assistant_response: str):
@@ -195,7 +213,9 @@ def update_conversation(conversation_id: str, user_message: str, assistant_respo
         Message(role="assistant", content=assistant_response)
     ])
 
-# --- Health check endpoint ---
+# ==================== API ENDPOINTS ====================
+
+# Health check endpoint
 @app.get("/health")
 async def health_check():
     return {
@@ -207,7 +227,7 @@ async def health_check():
         }
     }
 
-# --- Web Search endpoint ---
+# Web Search endpoint
 @app.post("/api/search", response_model=SearchResponse)
 async def search_endpoint(req: SearchRequest):
     """Standalone web search endpoint"""
@@ -225,7 +245,7 @@ async def search_endpoint(req: SearchRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- Enhanced LLM endpoint with search ---
+# LLM endpoint with search and document support
 @app.post("/api/llm", response_model=LLMResponse)
 async def llm_endpoint(req: LLMRequest):
     try:
@@ -236,9 +256,14 @@ async def llm_endpoint(req: LLMRequest):
         if req.context:
             context = req.context
         
-        # Call LLM with context and optional search
+        # Call LLM with context, optional search, and optional document
         tool = LLMTool()
-        answer, search_results = tool.call(req.prompt, context, req.include_search)
+        answer, search_results, document_used = tool.call(
+            req.prompt, 
+            context, 
+            req.include_search,
+            req.document_context
+        )
         
         # Update conversation history
         update_conversation(req.conversation_id, req.prompt, answer)
@@ -250,23 +275,86 @@ async def llm_endpoint(req: LLMRequest):
             response=answer,
             conversation_id=req.conversation_id,
             updated_context=updated_context,
-            search_results=search_results
+            search_results=search_results,
+            document_used=document_used
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- Get conversation history ---
+# Document upload and extraction
+@app.post("/api/documents", response_model=DocumentResponse)
+async def upload_document(file: UploadFile = File(...)):
+    """Accepts a PDF or plain-text file, extracts its text, stores it, and returns it."""
+    try:
+        content = await file.read()
+        if file.content_type == "application/pdf":
+            reader = PdfReader(io.BytesIO(content))
+            text = ""
+            for page in reader.pages:
+                text += page.extract_text() or ""
+        elif file.content_type.startswith("text/"):
+            text = content.decode(errors="ignore")
+        else:
+            raise HTTPException(status_code=415, detail="Unsupported file type")
+
+        # Store document context with timestamp
+        doc_id = f"doc_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
+        document_contexts[doc_id] = DocumentContext(
+            filename=file.filename,
+            content=text,
+            upload_time=datetime.now().isoformat()
+        )
+
+        return DocumentResponse(filename=file.filename, text=text)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process document: {e}")
+
+# Get list of uploaded documents
+@app.get("/api/documents")
+async def list_documents():
+    """Get list of uploaded documents"""
+    return {
+        "documents": [
+            {
+                "id": doc_id,
+                "filename": doc.filename,
+                "upload_time": doc.upload_time,
+                "content_length": len(doc.content)
+            }
+            for doc_id, doc in document_contexts.items()
+        ]
+    }
+
+# Get specific document content
+@app.get("/api/documents/{doc_id}")
+async def get_document(doc_id: str):
+    """Get specific document content"""
+    if doc_id not in document_contexts:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    doc = document_contexts[doc_id]
+    return {
+        "id": doc_id,
+        "filename": doc.filename,
+        "content": doc.content,
+        "upload_time": doc.upload_time
+    }
+
+# Get conversation history
 @app.get("/api/conversations/{conversation_id}")
 async def get_conversation(conversation_id: str):
     """Get full conversation history"""
-    context = get_conversation_context(conversation_id, max_messages=50)  # Get more for full history
+    context = get_conversation_context(conversation_id, max_messages=50)
     return {
         "conversation_id": conversation_id,
         "messages": context,
         "message_count": len(context)
     }
 
-# --- Clear conversation ---
+# Clear conversation
 @app.delete("/api/conversations/{conversation_id}")
 async def clear_conversation(conversation_id: str):
     """Clear conversation history"""
@@ -274,7 +362,7 @@ async def clear_conversation(conversation_id: str):
         del conversations[conversation_id]
     return {"message": f"Conversation {conversation_id} cleared"}
 
-# --- List all conversations ---
+# List all conversations
 @app.get("/api/conversations")
 async def list_conversations():
     """Get list of all conversation IDs and their message counts"""
@@ -289,30 +377,7 @@ async def list_conversations():
         ]
     }
 
-# --- Document upload & extraction ---
-@app.post("/api/documents", response_model=DocumentResponse)
-async def upload_document(file: UploadFile = File(...)):
-    """
-    Accepts a PDF or plain-text file, extracts its text, and returns it.
-    """
-    try:
-        content = await file.read()
-        if file.content_type == "application/pdf":
-            reader = PdfReader(io.BytesIO(content))
-            text = ""
-            for page in reader.pages:
-                text += page.extract_text() or ""
-        elif file.content_type.startswith("text/"):
-            text = content.decode(errors="ignore")
-        else:
-            raise HTTPException(status_code=415, detail="Unsupported file type")
-
-        return DocumentResponse(filename=file.filename, text=text)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to process document: {e}")
+# ==================== MAIN ====================
 
 if __name__ == "__main__":
     import uvicorn
