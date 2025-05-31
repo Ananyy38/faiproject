@@ -1,6 +1,7 @@
 import os
 import io
-from typing import List, Dict
+import requests
+from typing import List, Dict, Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
@@ -13,15 +14,19 @@ load_dotenv()
 # Initialize FastAPI
 app = FastAPI(
     title="SynthesisTalk Backend",
-    description="FastAPI backend for the SynthesisTalk research assistant",
-    version="0.1.0",
+    description="FastAPI backend for the SynthesisTalk research assistant with web search",
+    version="1.1.0",
 )
 
 # Initialize Groq client
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")  # Add to your .env file
 
 if not GROQ_API_KEY:
     raise ValueError("GROQ_API_KEY environment variable is required")
+
+if not BRAVE_API_KEY:
+    print("Warning: BRAVE_API_KEY not found. Web search will be disabled.")
 
 groq_client = Groq(api_key=GROQ_API_KEY)
 
@@ -30,15 +35,30 @@ class Message(BaseModel):
     role: str  # "user" or "assistant"
     content: str
 
+class SearchResult(BaseModel):
+    title: str
+    url: str
+    description: str
+
+class SearchRequest(BaseModel):
+    query: str
+    max_results: int = 5
+
+class SearchResponse(BaseModel):
+    query: str
+    results: List[SearchResult]
+
 class LLMRequest(BaseModel):
     prompt: str
     conversation_id: str = "default"
     context: List[Message] = []
+    include_search: bool = False  # New: whether to include web search
 
 class LLMResponse(BaseModel):
     response: str
     conversation_id: str
     updated_context: List[Message]
+    search_results: Optional[List[SearchResult]] = None  # New: search results if used
 
 class DocumentResponse(BaseModel):
     filename: str
@@ -47,20 +67,87 @@ class DocumentResponse(BaseModel):
 # --- In-memory conversation storage ---
 conversations: Dict[str, List[Message]] = {}
 
-# --- Actual LLMTool implementation ---
+# --- Web Search Tool ---
+class WebSearchTool:
+    def __init__(self):
+        self.api_key = BRAVE_API_KEY
+        self.base_url = "https://api.search.brave.com/res/v1/web/search"
+    
+    def search(self, query: str, max_results: int = 5) -> List[SearchResult]:
+        """Search the web using Brave Search API"""
+        if not self.api_key:
+            raise Exception("Brave API key not configured")
+        
+        try:
+            headers = {
+                "Accept": "application/json",
+                "Accept-Encoding": "gzip",
+                "X-Subscription-Token": self.api_key
+            }
+            
+            params = {
+                "q": query,
+                "count": max_results,
+                "search_lang": "en",
+                "country": "us",
+                "safesearch": "moderate",
+                "freshness": "pm"  # Past month for more recent results
+            }
+            
+            response = requests.get(self.base_url, headers=headers, params=params)
+            response.raise_for_status()
+            
+            data = response.json()
+            results = []
+            
+            if "web" in data and "results" in data["web"]:
+                for item in data["web"]["results"]:
+                    results.append(SearchResult(
+                        title=item.get("title", ""),
+                        url=item.get("url", ""),
+                        description=item.get("description", "")
+                    ))
+            
+            return results
+        
+        except Exception as e:
+            raise Exception(f"Web search failed: {str(e)}")
+
+# --- Enhanced LLM Tool ---
 class LLMTool:
     def __init__(self):
         self.client = groq_client
+        self.search_tool = WebSearchTool() if BRAVE_API_KEY else None
     
-    def call(self, prompt: str, context: List[Message] = None) -> str:
+    def call(self, prompt: str, context: List[Message] = None, include_search: bool = False) -> tuple[str, Optional[List[SearchResult]]]:
         try:
+            search_results = None
+            
+            # Perform web search if requested and available
+            if include_search and self.search_tool:
+                try:
+                    search_results = self.search_tool.search(prompt, max_results=3)
+                except Exception as e:
+                    print(f"Search failed: {e}")
+                    # Continue without search results rather than failing
+            
             # Build messages array with context
             messages = []
             
             # Add system message for research assistant behavior
+            system_message = """You are SynthesisTalk, an intelligent research assistant. You help users explore complex topics through conversation. Maintain context from previous messages and provide thoughtful, well-reasoned responses. If you reference previous parts of the conversation, be explicit about what you're referring to."""
+            
+            # If we have search results, include them in the system prompt
+            if search_results:
+                search_context = "\n\nWeb search results for your reference:\n"
+                for i, result in enumerate(search_results, 1):
+                    search_context += f"{i}. {result.title}\n   {result.description}\n   Source: {result.url}\n\n"
+                
+                system_message += search_context + "Use these search results to provide more current and comprehensive information when relevant."
+            
             messages.append({
                 "role": "system",
-                "content": "You are SynthesisTalk, an intelligent research assistant. You help users explore complex topics through conversation. Maintain context from previous messages and provide thoughtful, well-reasoned responses. If you reference previous parts of the conversation, be explicit about what you're referring to."
+                "content": system_message
             })
             
             # Add conversation context
@@ -83,7 +170,9 @@ class LLMTool:
                 temperature=0.7,
                 max_tokens=1000
             )
-            return chat_completion.choices[0].message.content
+            
+            return chat_completion.choices[0].message.content, search_results
+            
         except Exception as e:
             raise Exception(f"LLM call failed: {str(e)}")
 
@@ -109,9 +198,34 @@ def update_conversation(conversation_id: str, user_message: str, assistant_respo
 # --- Health check endpoint ---
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "SynthesisTalk Backend"}
+    return {
+        "status": "healthy", 
+        "service": "SynthesisTalk Backend",
+        "version": "1.1.0",
+        "features": {
+            "web_search": BRAVE_API_KEY is not None
+        }
+    }
 
-# --- LLM endpoint with context ---
+# --- Web Search endpoint ---
+@app.post("/api/search", response_model=SearchResponse)
+async def search_endpoint(req: SearchRequest):
+    """Standalone web search endpoint"""
+    try:
+        if not BRAVE_API_KEY:
+            raise HTTPException(status_code=503, detail="Web search not configured")
+        
+        search_tool = WebSearchTool()
+        results = search_tool.search(req.query, req.max_results)
+        
+        return SearchResponse(
+            query=req.query,
+            results=results
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Enhanced LLM endpoint with search ---
 @app.post("/api/llm", response_model=LLMResponse)
 async def llm_endpoint(req: LLMRequest):
     try:
@@ -122,9 +236,9 @@ async def llm_endpoint(req: LLMRequest):
         if req.context:
             context = req.context
         
-        # Call LLM with context
+        # Call LLM with context and optional search
         tool = LLMTool()
-        answer = tool.call(req.prompt, context)
+        answer, search_results = tool.call(req.prompt, context, req.include_search)
         
         # Update conversation history
         update_conversation(req.conversation_id, req.prompt, answer)
@@ -135,7 +249,8 @@ async def llm_endpoint(req: LLMRequest):
         return LLMResponse(
             response=answer,
             conversation_id=req.conversation_id,
-            updated_context=updated_context
+            updated_context=updated_context,
+            search_results=search_results
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
