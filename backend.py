@@ -7,6 +7,7 @@ from typing import List, Dict, Optional, Tuple
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from groq import Groq
 from PyPDF2 import PdfReader
@@ -19,6 +20,15 @@ app = FastAPI(
     title="SynthesisTalk Backend",
     description="FastAPI backend for the SynthesisTalk research assistant with enhanced features",
     version="1.3.0",
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Environment variables
@@ -630,6 +640,10 @@ def update_conversation(conversation_id: str, user_message: str, assistant_respo
 
 # ==================== API ENDPOINTS ====================
 
+@app.get("/")
+async def root():
+    return {"message": "SynthesisTalk Backend v1.3.0", "status": "running"}
+
 @app.get("/health")
 async def health_check():
     return {
@@ -784,46 +798,49 @@ async def clear_search_cache():
     global search_cache
     cache_size = len(search_cache)
     search_cache.clear()
-    return {"message": f"Search cache cleared. Removed {cache_size} cached entries."}
+    return {
+        "message": f"Search cache cleared successfully",
+        "items_cleared": cache_size
+    }
 
 @app.get("/api/cache/stats")
 async def get_cache_stats():
-    """Get search cache statistics"""
-    total_entries = len(search_cache)
-    valid_entries = sum(1 for _, (_, cache_time) in search_cache.items() if is_cache_valid(cache_time))
+    """Get cache statistics"""
+    valid_entries = 0
+    expired_entries = 0
+    
+    for cache_key, (results, cache_time) in search_cache.items():
+        if is_cache_valid(cache_time):
+            valid_entries += 1
+        else:
+            expired_entries += 1
     
     return {
-        "total_cached_searches": total_entries,
-        "valid_cached_searches": valid_entries,
-        "expired_cached_searches": total_entries - valid_entries
+        "total_entries": len(search_cache),
+        "valid_entries": valid_entries,
+        "expired_entries": expired_entries,
+        "cache_hit_potential": f"{(valid_entries / max(1, len(search_cache))) * 100:.1f}%"
     }
 
 @app.get("/api/conversations")
 async def list_conversations():
-    """List all conversation IDs with metadata"""
-    conversation_list = []
-    
-    for conv_id, messages in conversations.items():
-        if messages:
-            first_message = messages[0]
-            last_message = messages[-1]
-            
-            # Count reasoning steps used
-            reasoning_count = sum(1 for msg in messages if msg.reasoning_steps)
-            
-            conversation_list.append({
-                "conversation_id": conv_id,
-                "message_count": len(messages),
-                "first_message_time": first_message.timestamp,
-                "last_message_time": last_message.timestamp,
-                "has_reasoning_steps": reasoning_count > 0,
-                "reasoning_messages_count": reasoning_count,
-                "preview": messages[0].content[:100] + "..." if len(messages[0].content) > 100 else messages[0].content
-            })
+    """List all conversation IDs"""
+    return {
+        "conversations": list(conversations.keys()),
+        "total_conversations": len(conversations),
+        "total_messages": sum(len(msgs) for msgs in conversations.values())
+    }
+
+@app.get("/api/conversations/{conversation_id}")
+async def get_conversation(conversation_id: str):
+    """Get a specific conversation"""
+    if conversation_id not in conversations:
+        raise HTTPException(status_code=404, detail="Conversation not found")
     
     return {
-        "conversations": conversation_list,
-        "total_conversations": len(conversation_list)
+        "conversation_id": conversation_id,
+        "messages": conversations[conversation_id],
+        "message_count": len(conversations[conversation_id])
     }
 
 @app.delete("/api/conversations/{conversation_id}")
@@ -842,79 +859,156 @@ async def delete_conversation(conversation_id: str):
 
 @app.get("/api/documents")
 async def list_documents():
-    """List all uploaded documents with metadata"""
-    document_list = []
-    
+    """List all uploaded documents"""
+    docs_info = []
     for doc_id, doc_context in document_contexts.items():
-        document_list.append({
+        docs_info.append({
             "document_id": doc_id,
             "filename": doc_context.filename,
             "upload_time": doc_context.upload_time,
             "content_length": doc_context.content_length,
-            "is_chunked": doc_context.chunks is not None,
+            "chunked": doc_context.chunks is not None,
             "chunk_count": len(doc_context.chunks) if doc_context.chunks else 0
         })
     
     return {
-        "documents": document_list,
-        "total_documents": len(document_list)
+        "documents": docs_info,
+        "total_documents": len(document_contexts)
     }
 
-@app.get("/api/documents/{document_id}")
-async def get_document(document_id: str):
-    """Get a specific document by ID"""
-    if document_id not in document_contexts:
+@app.get("/api/documents/{doc_id}")
+async def get_document(doc_id: str):
+    """Get a specific document"""
+    if doc_id not in document_contexts:
         raise HTTPException(status_code=404, detail="Document not found")
     
-    return document_contexts[document_id]
+    return document_contexts[doc_id]
 
-@app.delete("/api/documents/{document_id}")
-async def delete_document(document_id: str):
+@app.delete("/api/documents/{doc_id}")
+async def delete_document(doc_id: str):
     """Delete a specific document"""
-    if document_id not in document_contexts:
+    if doc_id not in document_contexts:
         raise HTTPException(status_code=404, detail="Document not found")
     
-    doc_context = document_contexts[document_id]
-    del document_contexts[document_id]
+    filename = document_contexts[doc_id].filename
+    del document_contexts[doc_id]
     
     return {
-        "message": f"Document {doc_context.filename} deleted successfully",
-        "document_id": document_id
+        "message": f"Document {filename} deleted successfully"
     }
 
-# ==================== STARTUP EVENT ====================
+# ==================== ADVANCED ENDPOINTS ====================
+
+@app.post("/api/llm/batch")
+async def batch_llm_requests(requests: List[LLMRequest]):
+    """Process multiple LLM requests in batch"""
+    if len(requests) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 requests per batch")
+    
+    results = []
+    tool = LLMTool()
+    
+    for req in requests:
+        try:
+            context = get_conversation_context(req.conversation_id)
+            if req.context:
+                context = req.context
+            
+            answer, search_results, document_used, sources_used, metadata, reasoning_steps = tool.call(
+                req.prompt, 
+                context, 
+                req.include_search,
+                req.document_context,
+                req.enable_source_attribution,
+                req.enable_chain_of_thought,
+                req.reasoning_depth
+            )
+            
+            update_conversation(req.conversation_id, req.prompt, answer, sources_used, reasoning_steps)
+            updated_context = get_conversation_context(req.conversation_id)
+            
+            results.append({
+                "success": True,
+                "response": LLMResponse(
+                    response=answer,
+                    conversation_id=req.conversation_id,
+                    updated_context=updated_context,
+                    search_results=search_results,
+                    document_used=document_used,
+                    sources_used=sources_used,
+                    response_metadata=metadata,
+                    reasoning_steps=reasoning_steps
+                )
+            })
+            
+        except Exception as e:
+            results.append({
+                "success": False,
+                "error": str(e),
+                "conversation_id": req.conversation_id
+            })
+    
+    return {"results": results, "processed_count": len(results)}
+
+@app.get("/api/analytics")
+async def get_analytics():
+    """Get usage analytics"""
+    total_messages = sum(len(msgs) for msgs in conversations.values())
+    total_user_messages = sum(1 for msgs in conversations.values() for msg in msgs if msg.role == "user")
+    total_assistant_messages = sum(1 for msgs in conversations.values() for msg in msgs if msg.role == "assistant")
+    
+    messages_with_sources = sum(1 for msgs in conversations.values() for msg in msgs if msg.sources)
+    messages_with_reasoning = sum(1 for msgs in conversations.values() for msg in msgs if msg.reasoning_steps)
+    
+    return {
+        "conversations": {
+            "total_conversations": len(conversations),
+            "total_messages": total_messages,
+            "user_messages": total_user_messages,
+            "assistant_messages": total_assistant_messages
+        },
+        "features": {
+            "messages_with_sources": messages_with_sources,
+            "messages_with_reasoning": messages_with_reasoning,
+            "source_attribution_usage": f"{(messages_with_sources / max(1, total_assistant_messages)) * 100:.1f}%",
+            "reasoning_usage": f"{(messages_with_reasoning / max(1, total_assistant_messages)) * 100:.1f}%"
+        },
+        "documents": {
+            "total_documents": len(document_contexts),
+            "total_content_length": sum(doc.content_length for doc in document_contexts.values())
+        },
+        "cache": {
+            "search_cache_size": len(search_cache),
+            "cache_hit_rate": "N/A"  # Would need tracking for actual hit rate
+        }
+    }
+
+# ==================== STARTUP AND SHUTDOWN ====================
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize the application on startup"""
     print("🚀 SynthesisTalk Backend v1.3.0 starting up...")
-    print(f"✅ Groq API: {'Configured' if GROQ_API_KEY else 'Not configured'}")
-    print(f"🔍 Web Search: {'Enabled' if BRAVE_API_KEY else 'Disabled'}")
-    print("🧠 Chain of Thought Reasoning: Enabled")
-    print("📚 Document Processing: Enabled")
-    print("💾 Search Caching: Enabled")
-    print("🔗 Source Attribution: Enabled")
-    print("📤 Conversation Export/Import: Enabled")
-    print("Ready to assist with research and analysis!")
+    print(f"📊 Web search enabled: {BRAVE_API_KEY is not None}")
+    print(f"🧠 Chain of Thought reasoning: Enabled")
+    print(f"📚 Document processing: Enabled")
+    print(f"🔍 Source attribution: Enabled")
+    print("✅ Backend ready!")
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Clean up on application shutdown"""
+    """Clean up on shutdown"""
     print("🛑 SynthesisTalk Backend shutting down...")
-    print("✅ Cleanup completed")
-
-# ==================== ERROR HANDLERS ====================
-
-@app.exception_handler(404)
-async def not_found_handler(request, exc):
-    return {"error": "Endpoint not found", "detail": str(exc.detail)}
-
-@app.exception_handler(500)
-async def internal_error_handler(request, exc):
-    return {"error": "Internal server error", "detail": "An unexpected error occurred"}
+    print("✅ Shutdown complete!")
 
 # ==================== MAIN ====================
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        "backend:app",
+        host="0.0.0.0", 
+        port=8000,
+        reload=True,
+        log_level="info"
+    )
