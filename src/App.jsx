@@ -6,7 +6,7 @@ function App() {
 
   // Core conversation state
   const [prompt, setPrompt] = useState("");
-  const [conversationId, setConversationId] = useState("default");
+  const [conversationId, setConversationId] = useState(null); // Changed from "default" to null
   const [conversationHistory, setConversationHistory] = useState([]);
 
   // File handling state
@@ -22,24 +22,24 @@ function App() {
   const [selectedDocument, setSelectedDocument] = useState(null);
   const [includeDocument, setIncludeDocument] = useState(false);
 
-  // NEW: Chain of Thought features
+  // Chain of Thought features
   const [enableChainOfThought, setEnableChainOfThought] = useState(false);
   const [reasoningDepth, setReasoningDepth] = useState(3);
   const [reasoningSteps, setReasoningSteps] = useState([]);
 
-  // NEW: Source attribution
+  // Source attribution
   const [enableSourceAttribution, setEnableSourceAttribution] = useState(true);
   const [sourcesUsed, setSourcesUsed] = useState([]);
 
-  // NEW: Document chunking options
+  // Document chunking options
   const [enableChunking, setEnableChunking] = useState(true);
   const [chunkSize, setChunkSize] = useState(2000);
 
-  // NEW: Conversation management
+  // Conversation management
   const [allConversations, setAllConversations] = useState([]);
   const [showConversationList, setShowConversationList] = useState(false);
 
-  // NEW: Cache management
+  // Cache management
   const [cacheStats, setCacheStats] = useState(null);
 
   // Loading states
@@ -54,28 +54,65 @@ function App() {
 
   // ==================== EFFECTS ====================
 
-  // Load conversation history on component mount
+  // Load conversation history when conversationId changes
   useEffect(() => {
-    loadConversationHistory();
+    if (conversationId) {
+      loadConversationHistory();
+    }
   }, [conversationId]);
 
-  // Load available documents on component mount
+  // Initialize app on component mount
   useEffect(() => {
-    loadAvailableDocuments();
-    loadAllConversations();
-    loadCacheStats();
+    initializeApp();
   }, []);
+
+  // ==================== INITIALIZATION ====================
+
+  const initializeApp = async () => {
+    try {
+      // Load available documents
+      await loadAvailableDocuments();
+
+      // Load all conversations
+      const conversations = await loadAllConversations();
+
+      // Load cache stats
+      await loadCacheStats();
+
+      // If no conversations exist, start with a new one
+      if (conversations.length === 0) {
+        const newConvId = `conversation_${Date.now()}`;
+        setConversationId(newConvId);
+        setConversationHistory([]);
+      } else {
+        // Optionally load the most recent conversation
+        // For now, just set up for a new conversation
+        const newConvId = `conversation_${Date.now()}`;
+        setConversationId(newConvId);
+        setConversationHistory([]);
+      }
+    } catch (error) {
+      console.error("Failed to initialize app:", error);
+      // Fallback: create a new conversation
+      const newConvId = `conversation_${Date.now()}`;
+      setConversationId(newConvId);
+      setConversationHistory([]);
+    }
+  };
 
   // ==================== DATA LOADING FUNCTIONS ====================
 
   // Load conversation history from backend
   const loadConversationHistory = async () => {
+    if (!conversationId) return;
+
     try {
       const res = await axios.get(`/api/conversations/${conversationId}`);
       setConversationHistory(res.data.messages || []);
     } catch (err) {
       console.log("No existing conversation found, starting fresh");
       setConversationHistory([]);
+      // Don't throw error - this is expected for new conversations
     }
   };
 
@@ -90,18 +127,21 @@ function App() {
     }
   };
 
-  // NEW: Load all conversations
+  // Load all conversations
   const loadAllConversations = async () => {
     try {
       const res = await axios.get("/api/conversations");
-      setAllConversations(res.data.conversations || []);
+      const conversations = res.data.conversations || [];
+      setAllConversations(conversations);
+      return conversations;
     } catch (err) {
       console.log("Error loading conversations list");
       setAllConversations([]);
+      return [];
     }
   };
 
-  // NEW: Load cache statistics
+  // Load cache statistics
   const loadCacheStats = async () => {
     try {
       const res = await axios.get("/api/cache/stats");
@@ -128,6 +168,12 @@ function App() {
   const handlePromptSubmit = async () => {
     if (!prompt.trim()) return;
 
+    // Ensure we have a conversation ID
+    if (!conversationId) {
+      const newConvId = `conversation_${Date.now()}`;
+      setConversationId(newConvId);
+    }
+
     setLlmLoading(true);
     setLlmError("");
     setSearchResults(null);
@@ -145,7 +191,7 @@ function App() {
 
       console.log("Sending LLM request:", {
         prompt,
-        conversationId,
+        conversationId: conversationId || `conversation_${Date.now()}`,
         includeSearch,
         includeDocument,
         enableChainOfThought,
@@ -154,46 +200,57 @@ function App() {
         selectedDocument: selectedDocument?.filename,
       });
 
-      const res = await axios.post(
-        "/api/llm",
-        {
-          prompt,
-          conversation_id: conversationId,
-          context: conversationHistory,
-          include_search: includeSearch,
-          document_context: documentContext,
-          enable_source_attribution: enableSourceAttribution,
-          enable_chain_of_thought: enableChainOfThought,
-          reasoning_depth: reasoningDepth,
+      const requestBody = {
+        prompt,
+        conversation_id: conversationId || `conversation_${Date.now()}`,
+        include_search: includeSearch,
+        enable_source_attribution: enableSourceAttribution,
+        enable_chain_of_thought: enableChainOfThought,
+        reasoning_depth: reasoningDepth,
+      };
+
+      // Add document context if available
+      if (documentContext) {
+        requestBody.document_context = documentContext;
+      }
+
+      const res = await axios.post("/api/llm", requestBody, {
+        headers: {
+          "Content-Type": "application/json",
         },
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      });
 
       console.log("LLM response received:", res.data);
 
       // Update conversation history with the new response
-      setConversationHistory(res.data.updated_context);
+      setConversationHistory(res.data.updated_context || []);
 
       // Set search results if returned
       if (res.data.search_results) {
         setSearchResults(res.data.search_results);
       }
 
-      // NEW: Set reasoning steps if returned
+      // Set reasoning steps if returned
       if (res.data.reasoning_steps) {
         setReasoningSteps(res.data.reasoning_steps);
       }
 
-      // NEW: Set sources used if returned
+      // Set sources used if returned
       if (res.data.sources_used) {
         setSourcesUsed(res.data.sources_used);
       }
 
+      // Auto-generate title for first message
+      const updatedContext = res.data.updated_context || [];
+      if (updatedContext.length === 2) {
+        // First user + assistant message
+        await generateTitle(conversationId || `conversation_${Date.now()}`);
+      }
+
       setPrompt(""); // Clear the input after successful submission
+
+      // Refresh conversations list
+      await loadAllConversations();
     } catch (err) {
       console.error("LLM Error:", err);
       if (err.response) {
@@ -207,6 +264,17 @@ function App() {
       }
     } finally {
       setLlmLoading(false);
+    }
+  };
+
+  // Auto-generate title
+  const generateTitle = async (convId) => {
+    try {
+      await axios.post(`/api/conversations/${convId}/auto-title`);
+      // Refresh conversations list to show updated title
+      await loadAllConversations();
+    } catch (error) {
+      console.error("Failed to generate title:", error);
     }
   };
 
@@ -241,8 +309,10 @@ function App() {
 
   // ==================== CONVERSATION MANAGEMENT ====================
 
-  // Clear conversation
+  // Clear current conversation
   const handleClearConversation = async () => {
+    if (!conversationId) return;
+
     try {
       await axios.delete(`/api/conversations/${conversationId}`);
       setConversationHistory([]);
@@ -257,10 +327,44 @@ function App() {
     }
   };
 
+  // Clear all conversations
+  const handleClearAllHistory = async () => {
+    const confirmed = window.confirm(
+      "Are you sure you want to clear all conversation history?"
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await axios.delete("/api/conversations");
+      console.log(`Cleared ${res.data.deleted_count} conversations`);
+
+      // Reset UI state
+      setAllConversations([]);
+      setConversationHistory([]);
+      setPrompt("");
+      setLlmError("");
+      setSearchResults(null);
+      setReasoningSteps([]);
+      setSourcesUsed([]);
+
+      // Start with a new conversation
+      const newConvId = `conversation_${Date.now()}`;
+      setConversationId(newConvId);
+    } catch (err) {
+      console.error("Error clearing all history:", err);
+    }
+  };
+
   // Start new conversation
-  const handleNewConversation = () => {
-    const newId = `conversation_${Date.now()}`;
-    setConversationId(newId);
+  const handleNewConversation = async () => {
+    // Save current conversation state if needed (refresh conversations list)
+    if (conversationHistory.length > 0 && conversationId) {
+      await loadAllConversations();
+    }
+
+    // Start new conversation
+    const newConvId = `conversation_${Date.now()}`;
+    setConversationId(newConvId);
     setConversationHistory([]);
     setPrompt("");
     setLlmError("");
@@ -269,16 +373,31 @@ function App() {
     setSourcesUsed([]);
   };
 
-  // NEW: Switch to existing conversation
-  const handleSwitchConversation = (convId) => {
+  // Switch to existing conversation
+  const handleSwitchConversation = async (convId) => {
     setConversationId(convId);
     setShowConversationList(false);
     setReasoningSteps([]);
     setSourcesUsed([]);
+    setPrompt("");
+    setLlmError("");
+    setSearchResults(null);
+
+    // Load the conversation history
+    try {
+      const res = await axios.get(`/api/conversations/${convId}`);
+      setConversationHistory(res.data.messages || []);
+    } catch (err) {
+      console.error("Failed to load conversation:", err);
+      // If loading fails, treat as new conversation
+      setConversationHistory([]);
+    }
   };
 
-  // NEW: Export conversation
+  // Export conversation
   const handleExportConversation = async () => {
+    if (!conversationId) return;
+
     try {
       const res = await axios.get(
         `/api/conversations/${conversationId}/export`
@@ -297,7 +416,7 @@ function App() {
     }
   };
 
-  // NEW: Import conversation
+  // Import conversation
   const handleImportConversation = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -315,7 +434,7 @@ function App() {
     }
   };
 
-  // NEW: Clear search cache
+  // Clear search cache
   const handleClearCache = async () => {
     try {
       await axios.delete("/api/cache/search");
@@ -385,7 +504,7 @@ function App() {
     }
   };
 
-  // NEW: Delete document
+  // Delete document
   const handleDeleteDocument = async (docId) => {
     try {
       await axios.delete(`/api/documents/${docId}`);
@@ -423,7 +542,7 @@ function App() {
     >
       <h1>SynthesisTalk v1.3 - Enhanced Research Assistant</h1>
 
-      {/* NEW: System Status */}
+      {/* System Status */}
       <div
         style={{
           marginBottom: 20,
@@ -438,7 +557,7 @@ function App() {
         {enableChainOfThought ? "✅" : "❌"} | Source Attribution:{" "}
         {enableSourceAttribution ? "✅" : "❌"} |
         {cacheStats &&
-          `Cache: ${cacheStats.valid_cached_searches}/${cacheStats.total_cached_searches} valid`}
+          ` Cache: ${cacheStats.valid_cached_searches}/${cacheStats.total_cached_searches} valid`}
       </div>
 
       {/* ==================== CONVERSATION MANAGEMENT SECTION ==================== */}
@@ -519,7 +638,20 @@ function App() {
               cursor: "pointer",
             }}
           >
-            Clear History
+            Clear Current
+          </button>
+          <button
+            onClick={handleClearAllHistory}
+            style={{
+              padding: "6px 12px",
+              backgroundColor: "#dc3545",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: "pointer",
+            }}
+          >
+            Clear All History
           </button>
           <button
             onClick={handleClearCache}
@@ -536,7 +668,7 @@ function App() {
           </button>
         </div>
 
-        {/* NEW: Conversation List */}
+        {/* Conversation List */}
         {showConversationList && (
           <div
             style={{
@@ -550,41 +682,51 @@ function App() {
             }}
           >
             <h4 style={{ margin: "0 0 8px 0" }}>Available Conversations:</h4>
-            {allConversations.map((conv) => (
+            {allConversations.length === 0 ? (
               <div
-                key={conv.conversation_id}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "4px 8px",
-                  margin: "4px 0",
-                  backgroundColor:
-                    conv.conversation_id === conversationId
-                      ? "#007bff"
-                      : "white",
-                  color:
-                    conv.conversation_id === conversationId ? "white" : "black",
-                  borderRadius: 4,
-                  cursor: "pointer",
-                }}
-                onClick={() => handleSwitchConversation(conv.conversation_id)}
+                style={{ fontSize: "12px", color: "#666", fontStyle: "italic" }}
               >
-                <div>
-                  <div style={{ fontSize: "12px", fontWeight: "bold" }}>
-                    {conv.conversation_id}
-                  </div>
-                  <div style={{ fontSize: "10px" }}>{conv.preview}</div>
-                  <div style={{ fontSize: "10px" }}>
-                    {conv.message_count} msgs | CoT:{" "}
-                    {conv.has_reasoning_steps ? "✅" : "❌"}
-                  </div>
-                </div>
-                <div style={{ fontSize: "10px" }}>
-                  {new Date(conv.last_message_time).toLocaleDateString()}
-                </div>
+                No conversations found. Start a new conversation to get started!
               </div>
-            ))}
+            ) : (
+              allConversations.map((conv) => (
+                <div
+                  key={conv.conversation_id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "4px 8px",
+                    margin: "4px 0",
+                    backgroundColor:
+                      conv.conversation_id === conversationId
+                        ? "#007bff"
+                        : "white",
+                    color:
+                      conv.conversation_id === conversationId
+                        ? "white"
+                        : "black",
+                    borderRadius: 4,
+                    cursor: "pointer",
+                  }}
+                  onClick={() => handleSwitchConversation(conv.conversation_id)}
+                >
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: "bold" }}>
+                      {conv.title || conv.conversation_id}
+                    </div>
+                    <div style={{ fontSize: "10px" }}>{conv.preview}</div>
+                    <div style={{ fontSize: "10px" }}>
+                      {conv.message_count} msgs | CoT:{" "}
+                      {conv.has_reasoning_steps ? "✅" : "❌"}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: "10px" }}>
+                    {new Date(conv.last_message_time).toLocaleDateString()}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         )}
       </section>
@@ -592,11 +734,11 @@ function App() {
       {/* ==================== RESEARCH CONVERSATION SECTION ==================== */}
       <section style={{ marginTop: 20 }}>
         <div style={{ fontSize: "12px", color: "#666", marginBottom: 12 }}>
-          Conversation ID: {conversationId} | Messages:{" "}
+          Conversation ID: {conversationId || "Not set"} | Messages:{" "}
           {conversationHistory.length}
         </div>
 
-        {/* NEW: Chain of Thought Settings */}
+        {/* Chain of Thought Settings */}
         <div
           style={{
             marginBottom: 16,
@@ -699,7 +841,7 @@ function App() {
                 <div style={{ marginTop: "4px", whiteSpace: "pre-wrap" }}>
                   {message.content}
                 </div>
-                {/* NEW: Show sources and reasoning steps for assistant messages */}
+                {/* Show sources and reasoning steps for assistant messages */}
                 {message.role === "assistant" && message.sources && (
                   <div
                     style={{
@@ -734,7 +876,7 @@ function App() {
           </div>
         )}
 
-        {/* NEW: Reasoning Steps Display */}
+        {/* Reasoning Steps Display */}
         {reasoningSteps && reasoningSteps.length > 0 && (
           <div
             style={{
@@ -793,7 +935,7 @@ function App() {
           </div>
         )}
 
-        {/* NEW: Sources Used Display */}
+        {/* Sources Used Display */}
         {sourcesUsed && sourcesUsed.length > 0 && (
           <div
             style={{
