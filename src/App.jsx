@@ -3,13 +3,12 @@ import axios from "axios";
 import ChatInterface from "./components/ChatInterface";
 import ConversationManager from "./components/ConversationList";
 
-
 function App() {
   // ==================== STATE MANAGEMENT ====================
 
   // Core conversation state
   const [prompt, setPrompt] = useState("");
-  const [conversationId, setConversationId] = useState(null); // Changed from "default" to null
+  const [conversationId, setConversationId] = useState(null);
   const [conversationHistory, setConversationHistory] = useState([]);
 
   // File handling state
@@ -535,168 +534,495 @@ function App() {
   // ==================== RENDER ====================
 
   return (
-    <div
-      style={{
-        padding: 20,
-        fontFamily: "sans-serif",
-        maxWidth: "1200px",
-        margin: "0 auto",
-      }}
-    >
-      <h1>SynthesisTalk v1.3 - Enhanced Research Assistant</h1>
+    <div className="app-container">
+      <style jsx>{`
+        @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 
-      {/* System Status */}
-      <div
-        style={{
-          marginBottom: 20,
-          padding: 12,
-          backgroundColor: "#f8f9fa",
-          borderRadius: 4,
-          border: "1px solid #e9ecef",
-          fontSize: "12px",
-        }}
-      >
-        <strong>System Status:</strong> Chain of Thought:{" "}
-        {enableChainOfThought ? "✅" : "❌"} | Source Attribution:{" "}
-        {enableSourceAttribution ? "✅" : "❌"} |
-        {cacheStats &&
-          ` Cache: ${cacheStats.valid_cached_searches}/${cacheStats.total_cached_searches} valid`}
-      </div>
+        .app-container {
+          min-height: 100vh;
+          background: linear-gradient(
+            135deg,
+            #0f0f0f 0%,
+            #1a1a1a 50%,
+            #0f0f0f 100%
+          );
+          font-family:
+            "Inter",
+            -apple-system,
+            BlinkMacSystemFont,
+            sans-serif;
+          color: #ffffff;
+          overflow-x: hidden;
+        }
 
-      {/* Chain of Thought Settings */}
-      <div
-        style={{
-          marginBottom: 16,
-          padding: 12,
-          backgroundColor: "#e8f4f8",
-          borderRadius: 4,
-          border: "1px solid #bee5eb",
-        }}
-      >
-        <h4 style={{ margin: "0 0 8px 0", fontSize: "14px" }}>
-          🧠 Chain of Thought Reasoning
-        </h4>
-        <div
-          style={{
-            display: "flex",
-            gap: "16px",
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              fontSize: "12px",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={enableChainOfThought}
-              onChange={(e) => setEnableChainOfThought(e.target.checked)}
-              style={{ marginRight: "4px" }}
-            />
-            Enable Chain of Thought
-          </label>
-          {enableChainOfThought && (
-            <label style={{ fontSize: "12px" }}>
-              Reasoning Depth:
-              <select
-                value={reasoningDepth}
-                onChange={(e) => setReasoningDepth(parseInt(e.target.value))}
-                style={{ marginLeft: "4px", padding: "2px" }}
-              >
-                <option value={2}>2 steps</option>
-                <option value={3}>3 steps</option>
-                <option value={4}>4 steps</option>
-                <option value={5}>5 steps</option>
-              </select>
-            </label>
+        .glass-effect {
+          background: rgba(255, 255, 255, 0.02);
+          backdrop-filter: blur(20px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 16px;
+        }
+
+        .main-content {
+          max-width: 1400px;
+          margin: 0 auto;
+          padding: 2rem;
+        }
+
+        .header {
+          text-align: center;
+          margin-bottom: 3rem;
+          position: relative;
+        }
+
+        .header::before {
+          content: "";
+          position: absolute;
+          top: -50px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 200px;
+          height: 2px;
+          background: linear-gradient(90deg, transparent, #800020, transparent);
+          animation: pulse 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes pulse {
+          0% {
+            opacity: 0.3;
+          }
+          100% {
+            opacity: 1;
+          }
+        }
+
+        .title {
+          font-size: clamp(2rem, 4vw, 3.5rem);
+          font-weight: 700;
+          margin: 0;
+          background: linear-gradient(
+            135deg,
+            #ffffff 0%,
+            #800020 50%,
+            #ff6b9d 100%
+          );
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
+          text-shadow: 0 0 30px rgba(128, 0, 32, 0.3);
+          letter-spacing: -0.02em;
+        }
+
+        .subtitle {
+          font-size: 1.1rem;
+          color: #888;
+          margin-top: 0.5rem;
+          font-weight: 300;
+        }
+
+        .system-status {
+          background: rgba(128, 0, 32, 0.1);
+          border: 1px solid rgba(128, 0, 32, 0.3);
+          border-radius: 12px;
+          padding: 1rem;
+          margin-bottom: 2rem;
+          font-family: "JetBrains Mono", monospace;
+          font-size: 0.85rem;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 1rem;
+          transition: all 0.3s ease;
+        }
+
+        .system-status:hover {
+          background: rgba(128, 0, 32, 0.15);
+          border-color: rgba(128, 0, 32, 0.5);
+          transform: translateY(-2px);
+        }
+
+        .status-item {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+
+        .status-indicator {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #00ff88;
+          box-shadow: 0 0 10px #00ff88;
+          animation: glow 2s ease-in-out infinite alternate;
+        }
+
+        .status-indicator.disabled {
+          background: #666;
+          box-shadow: none;
+          animation: none;
+        }
+
+        @keyframes glow {
+          0% {
+            box-shadow: 0 0 5px #00ff88;
+          }
+          100% {
+            box-shadow:
+              0 0 20px #00ff88,
+              0 0 30px #00ff88;
+          }
+        }
+
+        .cot-settings {
+          background: rgba(128, 0, 32, 0.08);
+          border: 1px solid rgba(128, 0, 32, 0.2);
+          border-radius: 16px;
+          padding: 1.5rem;
+          margin-bottom: 2rem;
+          transition: all 0.3s ease;
+        }
+
+        .cot-settings:hover {
+          background: rgba(128, 0, 32, 0.12);
+          border-color: rgba(128, 0, 32, 0.3);
+        }
+
+        .cot-header {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          margin-bottom: 1rem;
+        }
+
+        .cot-title {
+          font-size: 1.1rem;
+          font-weight: 600;
+          margin: 0;
+          color: #ffffff;
+        }
+
+        .brain-icon {
+          font-size: 1.5rem;
+          animation: think 3s ease-in-out infinite;
+        }
+
+        @keyframes think {
+          0%,
+          100% {
+            transform: scale(1);
+          }
+          50% {
+            transform: scale(1.1);
+          }
+        }
+
+        .cot-controls {
+          display: flex;
+          gap: 2rem;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+
+        .control-group {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+
+        .modern-checkbox {
+          position: relative;
+          width: 20px;
+          height: 20px;
+          cursor: pointer;
+        }
+
+        .modern-checkbox input {
+          opacity: 0;
+          position: absolute;
+        }
+
+        .modern-checkbox .checkmark {
+          position: absolute;
+          top: 0;
+          left: 0;
+          height: 20px;
+          width: 20px;
+          background: rgba(255, 255, 255, 0.1);
+          border: 2px solid rgba(128, 0, 32, 0.5);
+          border-radius: 4px;
+          transition: all 0.3s ease;
+        }
+
+        .modern-checkbox input:checked ~ .checkmark {
+          background: linear-gradient(135deg, #800020, #a0002a);
+          border-color: #800020;
+        }
+
+        .modern-checkbox .checkmark:after {
+          content: "";
+          position: absolute;
+          display: none;
+          left: 6px;
+          top: 2px;
+          width: 6px;
+          height: 10px;
+          border: solid white;
+          border-width: 0 2px 2px 0;
+          transform: rotate(45deg);
+        }
+
+        .modern-checkbox input:checked ~ .checkmark:after {
+          display: block;
+        }
+
+        .modern-select {
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(128, 0, 32, 0.3);
+          border-radius: 8px;
+          padding: 0.5rem 0.75rem;
+          color: #ffffff;
+          font-size: 0.9rem;
+          margin-left: 0.5rem;
+          transition: all 0.3s ease;
+        }
+
+        .modern-select:focus {
+          outline: none;
+          border-color: #800020;
+          box-shadow: 0 0 0 3px rgba(128, 0, 32, 0.2);
+        }
+
+        .modern-select option {
+          background: #1a1a1a;
+          color: #ffffff;
+        }
+
+        .control-label {
+          font-size: 0.9rem;
+          color: #cccccc;
+          font-weight: 500;
+        }
+
+        .components-container {
+          display: grid;
+          gap: 2rem;
+        }
+
+        @media (min-width: 1200px) {
+          .components-container {
+            grid-template-columns: 350px 1fr;
+          }
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+          .main-content {
+            padding: 1rem;
+          }
+
+          .system-status {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .cot-controls {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+          }
+        }
+
+        /* Accessibility improvements */
+        .modern-checkbox:focus-within .checkmark {
+          box-shadow: 0 0 0 3px rgba(128, 0, 32, 0.3);
+        }
+
+        .modern-select:focus,
+        .modern-checkbox:focus-within {
+          outline: 2px solid #800020;
+          outline-offset: 2px;
+        }
+
+        /* High contrast mode support */
+        @media (prefers-contrast: high) {
+          .title {
+            -webkit-text-fill-color: #ffffff;
+            text-shadow: none;
+          }
+
+          .system-status,
+          .cot-settings {
+            border-width: 2px;
+          }
+        }
+
+        /* Reduced motion support */
+        @media (prefers-reduced-motion: reduce) {
+          .header::before,
+          .status-indicator,
+          .brain-icon {
+            animation: none;
+          }
+
+          .system-status:hover,
+          .cot-settings:hover {
+            transform: none;
+          }
+        }
+      `}</style>
+
+      <div className="main-content">
+        <header className="header">
+          <h1 className="title">SynthesisTalk</h1>
+          <p className="subtitle">Enhanced Research Assistant v1.3</p>
+        </header>
+
+        {/* System Status */}
+        <div className="system-status">
+          <div className="status-item">
+            <span className="control-label">System Status</span>
+          </div>
+          <div className="status-item">
+            <div
+              className={`status-indicator ${
+                !enableChainOfThought ? "disabled" : ""
+              }`}
+            ></div>
+            <span>Chain of Thought</span>
+          </div>
+          <div className="status-item">
+            <div
+              className={`status-indicator ${
+                !enableSourceAttribution ? "disabled" : ""
+              }`}
+            ></div>
+            <span>Source Attribution</span>
+          </div>
+          {cacheStats && (
+            <div className="status-item">
+              <div className="status-indicator"></div>
+              <span>
+                Cache: {cacheStats.valid_cached_searches}/
+                {cacheStats.total_cached_searches} valid
+              </span>
+            </div>
           )}
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              fontSize: "12px",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={enableSourceAttribution}
-              onChange={(e) => setEnableSourceAttribution(e.target.checked)}
-              style={{ marginRight: "4px" }}
-            />
-            Enable Source Attribution
-          </label>
+        </div>
+
+        {/* Chain of Thought Settings */}
+        <div className="cot-settings">
+          <div className="cot-header">
+            <span className="brain-icon">🧠</span>
+            <h3 className="cot-title">Chain of Thought Reasoning</h3>
+          </div>
+          <div className="cot-controls">
+            <div className="control-group">
+              <label className="modern-checkbox">
+                <input
+                  type="checkbox"
+                  checked={enableChainOfThought}
+                  onChange={(e) => setEnableChainOfThought(e.target.checked)}
+                  aria-label="Enable Chain of Thought reasoning"
+                />
+                <span className="checkmark"></span>
+              </label>
+              <span className="control-label">Enable Chain of Thought</span>
+            </div>
+
+            {enableChainOfThought && (
+              <div className="control-group">
+                <span className="control-label">Reasoning Depth:</span>
+                <select
+                  value={reasoningDepth}
+                  onChange={(e) => setReasoningDepth(parseInt(e.target.value))}
+                  className="modern-select"
+                  aria-label="Select reasoning depth"
+                >
+                  <option value={2}>2 steps</option>
+                  <option value={3}>3 steps</option>
+                  <option value={4}>4 steps</option>
+                  <option value={5}>5 steps</option>
+                </select>
+              </div>
+            )}
+
+            <div className="control-group">
+              <label className="modern-checkbox">
+                <input
+                  type="checkbox"
+                  checked={enableSourceAttribution}
+                  onChange={(e) => setEnableSourceAttribution(e.target.checked)}
+                  aria-label="Enable source attribution"
+                />
+                <span className="checkmark"></span>
+              </label>
+              <span className="control-label">Enable Source Attribution</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Components Container */}
+        <div className="components-container">
+          {/* Conversation Manager Component */}
+          <ConversationManager
+            conversationId={conversationId}
+            conversationHistory={conversationHistory}
+            allConversations={allConversations}
+            showConversationList={showConversationList}
+            setShowConversationList={setShowConversationList}
+            file={file}
+            docText={docText}
+            docLoading={docLoading}
+            docError={docError}
+            availableDocuments={availableDocuments}
+            selectedDocument={selectedDocument}
+            setSelectedDocument={setSelectedDocument}
+            includeDocument={includeDocument}
+            setIncludeDocument={setIncludeDocument}
+            enableChunking={enableChunking}
+            setEnableChunking={setEnableChunking}
+            chunkSize={chunkSize}
+            setChunkSize={setChunkSize}
+            handleNewConversation={handleNewConversation}
+            handleSwitchConversation={handleSwitchConversation}
+            handleExportConversation={handleExportConversation}
+            handleImportConversation={handleImportConversation}
+            handleClearConversation={handleClearConversation}
+            handleClearAllHistory={handleClearAllHistory}
+            handleClearCache={handleClearCache}
+            handleFileChange={handleFileChange}
+            handleFileUpload={handleFileUpload}
+            handleDeleteDocument={handleDeleteDocument}
+          />
+
+          {/* Chat Interface Component */}
+          <ChatInterface
+            conversationId={conversationId}
+            conversationHistory={conversationHistory}
+            prompt={prompt}
+            setPrompt={setPrompt}
+            includeSearch={includeSearch}
+            setIncludeSearch={setIncludeSearch}
+            searchResults={searchResults}
+            reasoningSteps={reasoningSteps}
+            sourcesUsed={sourcesUsed}
+            availableDocuments={availableDocuments}
+            selectedDocument={selectedDocument}
+            setSelectedDocument={setSelectedDocument}
+            includeDocument={includeDocument}
+            setIncludeDocument={setIncludeDocument}
+            llmLoading={llmLoading}
+            searchLoading={searchLoading}
+            llmError={llmError}
+            searchError={searchError}
+            handlePromptSubmit={handlePromptSubmit}
+            handleStandaloneSearch={handleStandaloneSearch}
+            handleKeyPress={handleKeyPress}
+            handleDeleteDocument={handleDeleteDocument}
+          />
         </div>
       </div>
-
-      {/* Conversation Manager Component */}
-      <ConversationManager
-        // Conversation state
-        conversationId={conversationId}
-        conversationHistory={conversationHistory}
-        allConversations={allConversations}
-        showConversationList={showConversationList}
-        setShowConversationList={setShowConversationList}
-        // Document state
-        file={file}
-        docText={docText}
-        docLoading={docLoading}
-        docError={docError}
-        availableDocuments={availableDocuments}
-        selectedDocument={selectedDocument}
-        setSelectedDocument={setSelectedDocument}
-        includeDocument={includeDocument}
-        setIncludeDocument={setIncludeDocument}
-        enableChunking={enableChunking}
-        setEnableChunking={setEnableChunking}
-        chunkSize={chunkSize}
-        setChunkSize={setChunkSize}
-        // Event handlers
-        handleNewConversation={handleNewConversation}
-        handleSwitchConversation={handleSwitchConversation}
-        handleExportConversation={handleExportConversation}
-        handleImportConversation={handleImportConversation}
-        handleClearConversation={handleClearConversation}
-        handleClearAllHistory={handleClearAllHistory}
-        handleClearCache={handleClearCache}
-        handleFileChange={handleFileChange}
-        handleFileUpload={handleFileUpload}
-        handleDeleteDocument={handleDeleteDocument}
-      />
-
-      {/* Chat Interface Component */}
-      <ChatInterface
-        // Conversation state
-        conversationId={conversationId}
-        conversationHistory={conversationHistory}
-        prompt={prompt}
-        setPrompt={setPrompt}
-        // Search and results state
-        includeSearch={includeSearch}
-        setIncludeSearch={setIncludeSearch}
-        searchResults={searchResults}
-        reasoningSteps={reasoningSteps}
-        sourcesUsed={sourcesUsed}
-        // Document integration
-        availableDocuments={availableDocuments}
-        selectedDocument={selectedDocument}
-        setSelectedDocument={setSelectedDocument}
-        includeDocument={includeDocument}
-        setIncludeDocument={setIncludeDocument}
-        // Loading and error states
-        llmLoading={llmLoading}
-        searchLoading={searchLoading}
-        llmError={llmError}
-        searchError={searchError}
-        // Event handlers
-        handlePromptSubmit={handlePromptSubmit}
-        handleStandaloneSearch={handleStandaloneSearch}
-        handleKeyPress={handleKeyPress}
-        handleDeleteDocument={handleDeleteDocument}
-      />
+      {/* ↓ Missing closing tags were added above ↓ */}
     </div>
   );
 }
