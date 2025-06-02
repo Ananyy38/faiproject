@@ -48,10 +48,10 @@ function ChatInterface({
           flex: 1;
           padding: 0;
           height: calc(
-            100vh - 300px
-          ); /* Adjusted to prevent overlap with input */
+            100vh - 200px
+          ); /* Account for prompt box height + padding + margins */
           margin-top: 40px;
-          margin-bottom: 20px; /* Add margin to prevent overlap */
+          margin-bottom: 140px; /* Space for prompt box (approx 80px) + visible gap (60px) */
           background: rgba(255, 255, 255, 0.85);
           backdrop-filter: blur(20px);
           border: 1px solid rgba(128, 0, 32, 0.15);
@@ -433,10 +433,11 @@ function ChatInterface({
         @media (max-width: 768px) {
           .chat-interface {
             border-radius: 0;
-            height: calc(100vh - 230px);
+            height: calc(100vh - 180px); /* Account for mobile prompt box */
             max-width: none;
             margin-left: 0;
             margin-right: 0;
+            margin-bottom: 120px; /* Space for mobile prompt box + gap */
           }
 
           .message {
