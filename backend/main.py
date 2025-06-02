@@ -169,8 +169,9 @@ async def upload_document(file: UploadFile = File(...), enable_chunking: bool = 
         doc_response = await process_document(file, enable_chunking, chunk_size)
         
         # Get the document context from the in-memory store
-        doc_context = document_contexts.get(doc_response.document_id)
-        
+        original_doc_id = doc_response.document_id
+        doc_context = document_contexts.get(original_doc_id)
+
         if doc_context:
             # Save to database
             chunks_data = [chunk.__dict__ for chunk in doc_context.chunks] if doc_context.chunks else None
@@ -181,8 +182,8 @@ async def upload_document(file: UploadFile = File(...), enable_chunking: bool = 
             # Update the response with database ID
             doc_response.document_id = db_document.id
             
-            # Remove from in-memory store since it's now in database
-            del document_contexts[doc_response.document_id]
+            # Remove from in-memory store using the original ID
+            del document_contexts[original_doc_id]
         
         return doc_response
     except HTTPException:
