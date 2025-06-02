@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import ChatInterface from "./components/ChatInterface";
-import ConversationManager from "./components/ConversationList";
 
 function App() {
   // ==================== STATE MANAGEMENT ====================
@@ -37,7 +36,7 @@ function App() {
   const [enableChunking, setEnableChunking] = useState(true);
   const [chunkSize, setChunkSize] = useState(2000);
 
-  // Conversation management
+  // Conversation management (sidebar, list)
   const [allConversations, setAllConversations] = useState([]);
   const [showConversationList, setShowConversationList] = useState(false);
 
@@ -54,7 +53,7 @@ function App() {
   const [docError, setDocError] = useState("");
   const [searchError, setSearchError] = useState("");
 
-  // New UI state for redesign
+  // New UI state for redesign (sidebar toggle, tools menu, etc.)
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const [hasStartedConversation, setHasStartedConversation] = useState(false);
@@ -62,51 +61,67 @@ function App() {
 
   // ==================== EFFECTS ====================
 
-  // Load conversation history when conversationId changes
+  // Whenever conversationId changes, load its history
   useEffect(() => {
     if (conversationId) {
       loadConversationHistory();
     }
   }, [conversationId]);
 
-  // Initialize app on component mount
+  // On mount, initialize app (fetch documents, conversations, cache stats)
   useEffect(() => {
     initializeApp();
   }, []);
 
-  // Check if conversation has started
+  // Determine whether we've started chatting
   useEffect(() => {
     setHasStartedConversation(conversationHistory.length > 0);
   }, [conversationHistory]);
+
+  // Auto-resize any existing textareas on mount
+  useEffect(() => {
+    const textareas = document.querySelectorAll(".chat-input");
+    textareas.forEach((textarea) => {
+      textarea.style.height = "auto";
+      const newHeight = Math.max(44, Math.min(200, textarea.scrollHeight));
+      textarea.style.height = newHeight + "px";
+    });
+  }, []);
+
+  // If a new file is set (via drag-and-drop or picker), upload it
+  useEffect(() => {
+    if (file) {
+      handleFileUpload();
+    }
+  }, [file]);
 
   // ==================== INITIALIZATION ====================
 
   const initializeApp = async () => {
     try {
-      // Load available documents
+      // Load available documents from backend
       await loadAvailableDocuments();
 
-      // Load all conversations
+      // Load all conversations (for sidebar)
       const conversations = await loadAllConversations();
 
       // Load cache stats
       await loadCacheStats();
 
-      // If no conversations exist, start with a new one
+      // If no existing conversations, start a new one
       if (conversations.length === 0) {
         const newConvId = `conversation_${Date.now()}`;
         setConversationId(newConvId);
         setConversationHistory([]);
       } else {
-        // Optionally load the most recent conversation
-        // For now, just set up for a new conversation
+        // Otherwise, also start fresh with a new conversation ID
         const newConvId = `conversation_${Date.now()}`;
         setConversationId(newConvId);
         setConversationHistory([]);
       }
     } catch (error) {
       console.error("Failed to initialize app:", error);
-      // Fallback: create a new conversation
+      // Fallback: always start a new conversation
       const newConvId = `conversation_${Date.now()}`;
       setConversationId(newConvId);
       setConversationHistory([]);
@@ -115,7 +130,7 @@ function App() {
 
   // ==================== DATA LOADING FUNCTIONS ====================
 
-  // Load conversation history from backend
+  // Fetch conversation history for the given conversationId
   const loadConversationHistory = async () => {
     if (!conversationId) return;
 
@@ -125,11 +140,10 @@ function App() {
     } catch (err) {
       console.log("No existing conversation found, starting fresh");
       setConversationHistory([]);
-      // Don't throw error - this is expected for new conversations
     }
   };
 
-  // Load available documents from backend
+  // Fetch all available documents
   const loadAvailableDocuments = async () => {
     try {
       const res = await axios.get("/api/documents");
@@ -140,7 +154,7 @@ function App() {
     }
   };
 
-  // Load all conversations
+  // Fetch list of all past conversations (for sidebar)
   const loadAllConversations = async () => {
     try {
       const res = await axios.get("/api/conversations");
@@ -154,7 +168,7 @@ function App() {
     }
   };
 
-  // Load cache statistics
+  // Fetch cache statistics (e.g., search cache)
   const loadCacheStats = async () => {
     try {
       const res = await axios.get("/api/cache/stats");
@@ -164,7 +178,7 @@ function App() {
     }
   };
 
-  // Get full document content
+  // Get full document content by ID
   const getDocumentContent = async (docId) => {
     try {
       const res = await axios.get(`/api/documents/${docId}`);
@@ -177,11 +191,11 @@ function App() {
 
   // ==================== CORE FUNCTIONALITY ====================
 
-  // Send prompt to /api/llm with context, search, and document support
+  // Send prompt to LLM API, including search/document context
   const handlePromptSubmit = async () => {
     if (!prompt.trim()) return;
 
-    // Ensure we have a conversation ID
+    // Ensure conversationId exists
     if (!conversationId) {
       const newConvId = `conversation_${Date.now()}`;
       setConversationId(newConvId);
@@ -192,10 +206,10 @@ function App() {
     setSearchResults(null);
     setReasoningSteps([]);
     setSourcesUsed([]);
-    setToolsMenuOpen(false); // Close tools menu on submit
+    setToolsMenuOpen(false);
 
     try {
-      // Get document content if a document is selected and includeDocument is true
+      // If a document is selected and includeDocument is true, fetch content
       let documentContext = null;
       if (includeDocument && selectedDocument) {
         documentContext = await getDocumentContent(
@@ -203,17 +217,7 @@ function App() {
         );
       }
 
-      console.log("Sending LLM request:", {
-        prompt,
-        conversationId: conversationId || `conversation_${Date.now()}`,
-        includeSearch,
-        includeDocument,
-        enableChainOfThought,
-        reasoningDepth,
-        enableSourceAttribution,
-        selectedDocument: selectedDocument?.filename,
-      });
-
+      // Build request body
       const requestBody = {
         prompt,
         conversation_id: conversationId || `conversation_${Date.now()}`,
@@ -223,48 +227,36 @@ function App() {
         reasoning_depth: reasoningDepth,
       };
 
-      // Add document context if available
       if (documentContext) {
         requestBody.document_context = documentContext;
       }
 
       const res = await axios.post("/api/llm", requestBody, {
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
       });
 
-      console.log("LLM response received:", res.data);
-
-      // Update conversation history with the new response
+      // Update conversation history
       setConversationHistory(res.data.updated_context || []);
 
-      // Set search results if returned
+      // Set optional pieces if returned
       if (res.data.search_results) {
         setSearchResults(res.data.search_results);
       }
-
-      // Set reasoning steps if returned
       if (res.data.reasoning_steps) {
         setReasoningSteps(res.data.reasoning_steps);
       }
-
-      // Set sources used if returned
       if (res.data.sources_used) {
         setSourcesUsed(res.data.sources_used);
       }
 
-      // Auto-generate title for first message
+      // Auto-generate title on first exchange
       const updatedContext = res.data.updated_context || [];
       if (updatedContext.length === 2) {
-        // First user + assistant message
         await generateTitle(conversationId || `conversation_${Date.now()}`);
       }
 
-      setPrompt(""); // Clear the input after successful submission
-
-      // Refresh conversations list
-      await loadAllConversations();
+      setPrompt(""); // Clear input after sending
+      await loadAllConversations(); // Refresh sidebar list
     } catch (err) {
       console.error("LLM Error:", err);
       if (err.response) {
@@ -281,18 +273,18 @@ function App() {
     }
   };
 
-  // Auto-generate title
+  // Auto-generate conversation title via backend
   const generateTitle = async (convId) => {
     try {
       await axios.post(`/api/conversations/${convId}/auto-title`);
-      // Refresh conversations list to show updated title
+      // Refresh sidebar list so updated title appears
       await loadAllConversations();
     } catch (error) {
       console.error("Failed to generate title:", error);
     }
   };
 
-  // Standalone search function
+  // Standalone search (without LLM)
   const handleStandaloneSearch = async () => {
     if (!prompt.trim()) return;
 
@@ -305,7 +297,6 @@ function App() {
         query: prompt,
         max_results: 5,
       });
-
       setSearchResults(res.data.results);
     } catch (err) {
       console.error("Search Error:", err);
@@ -323,7 +314,6 @@ function App() {
 
   // ==================== CONVERSATION MANAGEMENT ====================
 
-  // Clear current conversation
   const handleClearConversation = async () => {
     if (!conversationId) return;
 
@@ -342,7 +332,6 @@ function App() {
     }
   };
 
-  // Clear all conversations
   const handleClearAllHistory = async () => {
     const confirmed = window.confirm(
       "Are you sure you want to clear all conversation history?"
@@ -353,7 +342,6 @@ function App() {
       const res = await axios.delete("/api/conversations");
       console.log(`Cleared ${res.data.deleted_count} conversations`);
 
-      // Reset UI state
       setAllConversations([]);
       setConversationHistory([]);
       setPrompt("");
@@ -363,7 +351,7 @@ function App() {
       setSourcesUsed([]);
       setHasStartedConversation(false);
 
-      // Start with a new conversation
+      // Start a brand‐new conversation
       const newConvId = `conversation_${Date.now()}`;
       setConversationId(newConvId);
     } catch (err) {
@@ -371,14 +359,13 @@ function App() {
     }
   };
 
-  // Start new conversation
   const handleNewConversation = async () => {
-    // Save current conversation state if needed (refresh conversations list)
+    // If current conversation has messages, refresh sidebar list
     if (conversationHistory.length > 0 && conversationId) {
       await loadAllConversations();
     }
 
-    // Start new conversation
+    // Now truly start brand‐new
     const newConvId = `conversation_${Date.now()}`;
     setConversationId(newConvId);
     setConversationHistory([]);
@@ -389,13 +376,12 @@ function App() {
     setSourcesUsed([]);
     setHasStartedConversation(false);
 
-    // Close sidebar on mobile after starting new conversation
+    // On mobile, close sidebar
     if (window.innerWidth <= 768) {
       setSidebarOpen(false);
     }
   };
 
-  // Switch to existing conversation
   const handleSwitchConversation = async (convId) => {
     setConversationId(convId);
     setShowConversationList(false);
@@ -405,23 +391,19 @@ function App() {
     setLlmError("");
     setSearchResults(null);
 
-    // Load the conversation history
     try {
       const res = await axios.get(`/api/conversations/${convId}`);
       setConversationHistory(res.data.messages || []);
     } catch (err) {
       console.error("Failed to load conversation:", err);
-      // If loading fails, treat as new conversation
       setConversationHistory([]);
     }
 
-    // Close sidebar on mobile after switching conversation
     if (window.innerWidth <= 768) {
       setSidebarOpen(false);
     }
   };
 
-  // Export conversation
   const handleExportConversation = async () => {
     if (!conversationId) return;
 
@@ -443,13 +425,12 @@ function App() {
     }
   };
 
-  // Import conversation
   const handleImportConversation = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+    const fileToImport = event.target.files[0];
+    if (!fileToImport) return;
 
     try {
-      const text = await file.text();
+      const text = await fileToImport.text();
       const conversationData = JSON.parse(text);
 
       await axios.post("/api/conversations/import", conversationData);
@@ -461,7 +442,6 @@ function App() {
     }
   };
 
-  // Clear search cache
   const handleClearCache = async () => {
     try {
       await axios.delete("/api/cache/search");
@@ -474,13 +454,11 @@ function App() {
 
   // ==================== FILE HANDLING ====================
 
-  // Store selected file
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
-    setDocError(""); // Clear any previous errors
+    setDocError(""); // Clear previous errors
   };
 
-  // Upload file to /api/documents
   const handleFileUpload = async () => {
     if (!file) {
       setDocError("Please select a file first");
@@ -497,23 +475,21 @@ function App() {
     formData.append("chunk_size", chunkSize);
 
     try {
-      console.log("Uploading file:", file.name, file.type);
       const res = await axios.post("/api/documents", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      console.log("Document response received:", res.data);
       setDocText(res.data.text);
 
-      // Refresh the available documents list
+      // Refresh document list
       await loadAvailableDocuments();
 
-      // Auto-select the newly uploaded document
-      const newDocuments = await axios.get("/api/documents");
+      // Auto-select the newly uploaded doc
+      const newDocs = await axios.get("/api/documents");
       const latestDoc =
-        newDocuments.data.documents[newDocuments.data.documents.length - 1];
+        newDocs.data.documents[newDocs.data.documents.length - 1];
       if (latestDoc) {
         setSelectedDocument(latestDoc);
-        setIncludeDocument(true); // Auto-enable document inclusion
+        setIncludeDocument(true);
       }
     } catch (err) {
       console.error("Document Error:", err);
@@ -531,7 +507,6 @@ function App() {
     }
   };
 
-  // Delete document
   const handleDeleteDocument = async (docId) => {
     try {
       await axios.delete(`/api/documents/${docId}`);
@@ -547,16 +522,29 @@ function App() {
 
   // ==================== EVENT HANDLERS ====================
 
-  // Handle Enter key for prompt submission
   const handleKeyPress = (e) => {
-    if (e.key === "Enter" && e.ctrlKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
       handlePromptSubmit();
-    } else if (e.key === "Enter" && e.shiftKey) {
-      handleStandaloneSearch();
     }
   };
 
-  // Handle drag and drop
+  const handleTextareaChange = (e) => {
+    const textarea = e.target;
+    setPrompt(e.target.value);
+
+    requestAnimationFrame(() => {
+      textarea.style.height = "auto";
+      const minHeight = 44;
+      const maxHeight = 200;
+      const newHeight = Math.max(
+        minHeight,
+        Math.min(maxHeight, textarea.scrollHeight)
+      );
+      textarea.style.height = newHeight + "px";
+    });
+  };
+
   const handleDragOver = (e) => {
     e.preventDefault();
     setDragOver(true);
@@ -574,14 +562,10 @@ function App() {
     if (droppedFile) {
       setFile(droppedFile);
       setDocError("");
-      // Auto-upload the dropped file
-      setTimeout(() => {
-        handleFileUpload();
-      }, 100);
+      // The upload is triggered by the useEffect above
     }
   };
 
-  // Handle file picker
   const handleFilePicker = () => {
     const input = document.createElement("input");
     input.type = "file";
@@ -590,7 +574,6 @@ function App() {
       if (selectedFile) {
         setFile(selectedFile);
         setDocError("");
-        // Auto-upload the selected file
         setTimeout(() => {
           handleFileUpload();
         }, 100);
@@ -739,10 +722,10 @@ function App() {
           color: #800020;
           cursor: pointer;
           transition: all 0.3s ease;
-          text-decoration: none;
           display: inline-flex;
           align-items: center;
           gap: 0.5rem;
+          text-decoration: none;
         }
 
         .import-export-btn:hover {
@@ -753,10 +736,14 @@ function App() {
         }
 
         /* Sidebar Toggle */
-        .sidebar-toggle {
+        .sidebar-button {
+          width: 3rem;
+          height: 3rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           position: fixed;
           top: 1rem;
-          left: 1rem;
           z-index: 1002;
           background: rgba(255, 255, 255, 0.9);
           backdrop-filter: blur(20px);
@@ -770,19 +757,29 @@ function App() {
           box-shadow: 0 4px 16px rgba(128, 0, 32, 0.08);
         }
 
-        .sidebar-toggle:hover {
+        .sidebar-button:hover {
           background: rgba(128, 0, 32, 0.1);
           transform: translateY(-2px);
           box-shadow: 0 6px 20px rgba(128, 0, 32, 0.15);
         }
 
+        /* Position of “≡” toggle */
+        .sidebar-toggle {
+          left: 1rem;
+        }
+
+        /* Position of “➕” new chat button */
+        .new-chat-shortcut {
+          left: calc(1.7rem + 3rem + 0.5rem);
+        }
+
         /* Sidebar */
         .sidebar {
           position: fixed;
-          top: 0;
+          top: 7rem; /* if your header height is 6rem */
           left: ${sidebarOpen ? "0" : "-400px"};
           width: 350px;
-          height: 100vh;
+          height: calc(100vh - 6rem);
           background: rgba(255, 255, 255, 0.95);
           backdrop-filter: blur(20px);
           border-right: 1px solid rgba(128, 0, 32, 0.15);
@@ -790,425 +787,9 @@ function App() {
           z-index: 999;
           transition: left 0.3s ease;
           overflow-y: auto;
-          padding: 8rem 1.5rem 2rem 1.5rem;
+          padding: 5.85rem 1.5rem 2rem 1.5rem;
         }
 
-        /* Main Content */
-        .main-content {
-          flex: 1;
-          margin-left: ${sidebarOpen ? "350px" : "0"};
-          padding-top: 8rem;
-          transition: margin-left 0.3s ease;
-          position: relative;
-          min-height: 100vh;
-          display: flex;
-          flex-direction: column;
-        }
-
-        /* Central Chat Input (Empty State) */
-        .empty-state {
-          flex: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 2rem;
-        }
-
-        .central-input-container {
-          background: rgba(255, 255, 255, 0.85);
-          backdrop-filter: blur(20px);
-          border: 1px solid rgba(128, 0, 32, 0.15);
-          border-radius: 16px;
-          box-shadow: 0 8px 32px rgba(128, 0, 32, 0.08);
-          padding: 2rem;
-          width: 100%;
-          max-width: 600px;
-          position: relative;
-          transition: all 0.3s ease;
-        }
-
-        .central-input-container.drag-over {
-          border-color: #800020;
-          background: rgba(128, 0, 32, 0.05);
-          transform: scale(1.02);
-        }
-
-        .document-preview {
-          background: rgba(128, 0, 32, 0.05);
-          border: 1px solid rgba(128, 0, 32, 0.2);
-          border-radius: 8px;
-          padding: 0.75rem;
-          margin-bottom: 1rem;
-          font-size: 0.9rem;
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-        }
-
-        .input-wrapper {
-          position: relative;
-          display: flex;
-          align-items: flex-end;
-          gap: 0.75rem;
-          margin-bottom: 1rem;
-        }
-
-        .main-input {
-          flex: 1;
-          min-height: 120px;
-          padding: 1rem;
-          border: 1px solid rgba(128, 0, 32, 0.2);
-          border-radius: 12px;
-          background: rgba(255, 255, 255, 0.9);
-          color: #2c1810;
-          font-size: 1rem;
-          font-family: inherit;
-          resize: vertical;
-          transition: all 0.3s ease;
-        }
-
-        .main-input:focus {
-          outline: none;
-          border-color: #800020;
-          box-shadow: 0 0 0 3px rgba(128, 0, 32, 0.15);
-          background: rgba(255, 255, 255, 1);
-        }
-
-        .main-input::placeholder {
-          color: #8b5a3c;
-          font-style: italic;
-        }
-
-        .input-controls {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-
-        .control-btn {
-          background: rgba(128, 0, 32, 0.1);
-          border: 1px solid rgba(128, 0, 32, 0.2);
-          border-radius: 8px;
-          padding: 0.75rem;
-          cursor: pointer;
-          color: #800020;
-          font-size: 1.1rem;
-          transition: all 0.3s ease;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          min-width: 44px;
-          min-height: 44px;
-        }
-
-        .control-btn:hover:not(:disabled) {
-          background: rgba(128, 0, 32, 0.2);
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(128, 0, 32, 0.15);
-        }
-
-        .control-btn:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .control-btn.primary {
-          background: linear-gradient(135deg, #800020, #a0002a);
-          color: white;
-          border-color: #800020;
-        }
-
-        .control-btn.primary:hover:not(:disabled) {
-          background: linear-gradient(135deg, #a0002a, #c41e3a);
-          box-shadow: 0 4px 16px rgba(128, 0, 32, 0.3);
-        }
-
-        /* Tools Menu */
-        .tools-menu {
-          position: relative;
-        }
-
-        -dropdown {
-          position: absolute;
-          top: 100%;
-          right: 0;
-          margin-top: 0.5rem;
-          background: rgba(255, 255, 255, 0.95);
-          backdrop-filter: blur(20px);
-          border: 1px solid rgba(128, 0, 32, 0.2);
-          border-radius: 12px;
-          box-shadow: 0 8px 32px rgba(128, 0, 32, 0.15);
-          padding: 1rem;
-          min-width: 200px;
-          z-index: 1000;
-        }
-
-        .tools-dropdown.open {
-          display: block;
-        }
-
-        .tools-option {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          padding: 0.5rem 0;
-          cursor: pointer;
-          border-radius: 6px;
-          transition: all 0.2s ease;
-        }
-
-        .tools-option:hover {
-          background: rgba(128, 0, 32, 0.1);
-          padding-left: 0.5rem;
-          padding-right: 0.5rem;
-        }
-
-        .tools-checkbox {
-          width: 16px;
-          height: 16px;
-          border: 2px solid #800020;
-          border-radius: 3px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: all 0.2s ease;
-        }
-
-        .tools-checkbox.checked {
-          background: #800020;
-          color: white;
-        }
-
-        .tools-label {
-          font-size: 0.9rem;
-          color: #2c1810;
-          font-weight: 500;
-        }
-
-        /* Action Buttons */
-        .action-buttons {
-          display: flex;
-          gap: 0.5rem;
-          justify-content: space-between;
-          align-items: center;
-          margin-top: 1rem;
-        }
-
-        .keyboard-shortcuts {
-          font-size: 0.75rem;
-          color: #8b5a3c;
-          font-family: "JetBrains Mono", monospace;
-        }
-
-        .action-group {
-          display: flex;
-          gap: 0.5rem;
-        }
-
-        /* File Upload Area */
-        .file-upload-area {
-          border: 2px dashed rgba(128, 0, 32, 0.3);
-          border-radius: 8px;
-          padding: 1rem;
-          text-align: center;
-          color: #8b5a3c;
-          font-size: 0.9rem;
-          margin-bottom: 1rem;
-          transition: all 0.3s ease;
-          cursor: pointer;
-        }
-
-        .file-upload-area:hover {
-          border-color: #800020;
-          background: rgba(128, 0, 32, 0.05);
-        }
-
-        .file-upload-area.has-file {
-          border-color: #800020;
-          background: rgba(128, 0, 32, 0.1);
-          color: #800020;
-        }
-
-        /* Chat Interface (Active State) */
-        .chat-interface {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          padding: 0 2rem 2rem 2rem;
-          height: calc(100vh - 8rem);
-        }
-
-        .messages-container {
-          flex: 1;
-          overflow-y: auto;
-          padding: 1rem 0;
-          margin-bottom: 1rem;
-        }
-
-        .message {
-          margin-bottom: 1.5rem;
-          animation: fadeInUp 0.3s ease;
-        }
-
-        .message.user {
-          display: flex;
-          justify-content: flex-end;
-        }
-
-        .message.assistant {
-          display: flex;
-          justify-content: flex-start;
-        }
-
-        .message-content {
-          max-width: 70%;
-          padding: 1rem 1.25rem;
-          border-radius: 16px;
-          background: rgba(255, 255, 255, 0.9);
-          border: 1px solid rgba(128, 0, 32, 0.15);
-          box-shadow: 0 2px 8px rgba(128, 0, 32, 0.08);
-          word-wrap: break-word;
-          line-height: 1.6;
-        }
-
-        .message.user .message-content {
-          background: linear-gradient(135deg, #800020, #a0002a);
-          color: white;
-          border-color: #800020;
-        }
-
-        .reasoning-steps {
-          background: rgba(128, 0, 32, 0.05);
-          border: 1px solid rgba(128, 0, 32, 0.2);
-          border-radius: 12px;
-          padding: 1rem;
-          margin: 1rem 0;
-          font-size: 0.9rem;
-        }
-
-        .reasoning-step {
-          padding: 0.5rem 0;
-          border-bottom: 1px solid rgba(128, 0, 32, 0.1);
-        }
-
-        .reasoning-step:last-child {
-          border-bottom: none;
-        }
-
-        .search-results {
-          background: rgba(0, 184, 84, 0.05);
-          border: 1px solid rgba(0, 184, 84, 0.2);
-          border-radius: 12px;
-          padding: 1rem;
-          margin: 1rem 0;
-          font-size: 0.9rem;
-        }
-
-        .search-result {
-          padding: 0.75rem 0;
-          border-bottom: 1px solid rgba(0, 184, 84, 0.1);
-        }
-
-        .search-result:last-child {
-          border-bottom: none;
-        }
-
-        .search-result-title {
-          font-weight: 600;
-          color: #2c1810;
-          margin-bottom: 0.25rem;
-        }
-
-        .search-result-url {
-          font-size: 0.8rem;
-          color: #8b5a3c;
-          font-family: "JetBrains Mono", monospace;
-        }
-
-        /* Chat Input (Active State) */
-        .chat-input-container {
-          background: rgba(255, 255, 255, 0.9);
-          backdrop-filter: blur(20px);
-          border: 1px solid rgba(128, 0, 32, 0.15);
-          border-radius: 16px;
-          box-shadow: 0 4px 16px rgba(128, 0, 32, 0.08);
-          padding: 1rem;
-        }
-
-        .chat-input-wrapper {
-          display: flex;
-          align-items: flex-end;
-          gap: 0.75rem;
-        }
-
-        .chat-input {
-          flex: 1;
-          min-height: 44px;
-          max-height: 200px;
-          padding: 0.75rem;
-          border: 1px solid rgba(128, 0, 32, 0.2);
-          border-radius: 12px;
-          background: rgba(255, 255, 255, 0.9);
-          color: #2c1810;
-          font-size: 1rem;
-          font-family: inherit;
-          resize: none;
-          transition: all 0.3s ease;
-        }
-
-        .chat-input:focus {
-          outline: none;
-          border-color: #800020;
-          box-shadow: 0 0 0 2px rgba(128, 0, 32, 0.15);
-          background: rgba(255, 255, 255, 1);
-        }
-
-        .chat-input-controls {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-
-        /* Loading States */
-        .loading-spinner {
-          display: inline-block;
-          width: 20px;
-          height: 20px;
-          border: 2px solid rgba(128, 0, 32, 0.3);
-          border-radius: 50%;
-          border-top-color: #800020;
-          animation: spin 1s ease-in-out infinite;
-        }
-
-        @keyframes spin {
-          to {
-            transform: rotate(360deg);
-          }
-        }
-
-        @keyframes fadeInUp {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        /* Error States */
-        .error-message {
-          background: rgba(220, 53, 69, 0.1);
-          border: 1px solid rgba(220, 53, 69, 0.3);
-          color: #dc3545;
-          padding: 1rem;
-          border-radius: 8px;
-          margin: 1rem 0;
-          font-size: 0.9rem;
-        }
-
-        /* Sidebar Styles */
         .sidebar h3 {
           color: #800020;
           font-size: 1.1rem;
@@ -1216,11 +797,10 @@ function App() {
           margin: 0 0 1rem 0;
           padding-bottom: 0.5rem;
           border-bottom: 1px solid rgba(128, 0, 32, 0.2);
-          z-index: 1;
         }
 
         .sidebar-section {
-          margin-bottom: 2rem;
+          margin-bottom: 1rem;
         }
 
         .sidebar-btn {
@@ -1287,10 +867,6 @@ function App() {
           font-size: 0.9rem;
         }
 
-        .title-input-container /* or the input’s wrapper */ {
-          z-index: 0;
-        }
-
         .conversation-meta {
           font-size: 0.75rem;
           color: #8b5a3c;
@@ -1298,146 +874,103 @@ function App() {
           justify-content: space-between;
         }
 
-        .document-list {
-          max-height: 200px;
-          overflow-y: auto;
+        /* Main Content */
+        .main-content {
+          flex: 1;
+          margin-left: ${sidebarOpen ? "350px" : "0"};
+          padding-top: 8rem;
+          transition: margin-left 0.3s ease;
+          position: relative;
+          min-height: 100vh;
+          display: flex;
+          flex-direction: column;
         }
 
-        .document-item {
+        /* ======================
+           NEW: Bottom-center input 
+           ====================== */
+        .central-input-container {
+          position: fixed;
+          bottom: 20px;
+          left: 0;
+          width: 100%;
+          display: flex;
+          justify-content: center;
+          z-index: 100;
+        }
+
+        .chat-input-wrapper {
+          width: 100%;
+          max-width: 850px; /* ← adjust as needed */
+          padding: 1rem;
+          background: rgba(255, 255, 255, 0.95);
+          border: 1px solid rgba(128, 0, 32, 0.15);
+          border-radius: 12px;
+          box-shadow: 0 4px 12px rgba(128, 0, 32, 0.08);
+        }
+
+        .chat-input {
+          width: 100%;
+          padding: 0.75rem 1rem;
+          border-radius: 8px;
+          border: 1px solid rgba(128, 0, 32, 0.2);
+          font-size: 1rem;
+          resize: none;
+          box-sizing: border-box;
+        }
+
+        .chat-input-controls {
+          margin-top: 0.5rem;
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 0.5rem;
-          background: rgba(255, 255, 255, 0.5);
-          border: 1px solid rgba(128, 0, 32, 0.1);
-          border-radius: 6px;
-          margin-bottom: 0.5rem;
-          font-size: 0.85rem;
         }
 
-        .document-name {
-          color: #2c1810;
-          flex: 1;
-          margin-right: 0.5rem;
-        }
-
-        .document-actions {
+        .chat-input-controls-left {
           display: flex;
-          gap: 0.25rem;
-        }
-
-        .document-action {
-          background: none;
-          border: none;
-          color: #800020;
-          cursor: pointer;
-          padding: 0.25rem;
-          border-radius: 4px;
-          transition: background 0.2s ease;
-        }
-
-        .document-action:hover {
-          background: rgba(128, 0, 32, 0.1);
-        }
-
-        /* Help Section */
-        .help-section {
-          background: rgba(128, 0, 32, 0.05);
-          border: 1px solid rgba(128, 0, 32, 0.15);
-          border-radius: 8px;
-          padding: 1rem;
-          font-size: 0.85rem;
-          color: #2c1810;
-        }
-
-        .help-item {
-          margin-bottom: 0.5rem;
-          display: flex;
-          align-items: center;
           gap: 0.5rem;
         }
 
-        .help-shortcut {
-          background: rgba(128, 0, 32, 0.1);
-          padding: 0.25rem 0.5rem;
-          border-radius: 4px;
-          font-family: "JetBrains Mono", monospace;
-          font-size: 0.75rem;
-          color: #800020;
+        .chat-input-controls-right {
+          display: flex;
+          gap: 0.5rem;
+          align-items: center;
         }
 
-        /* Responsive Design */
-        @media (max-width: 768px) {
-          .sidebar {
-            width: 100%;
-            left: ${sidebarOpen ? "0" : "-100%"};
-          }
-
-          .main-content {
-            margin-left: 0;
-          }
-
-          .central-input-container,
-          .chat-input-container {
-            margin: 0 1rem;
-          }
-
-          .empty-state {
-            padding: 1rem;
-          }
-
-          .chat-interface {
-            padding: 0 1rem 1rem 1rem;
-          }
-
-          .message-content {
-            max-width: 85%;
-          }
-
-          .status-bar,
-          .import-export-controls {
-            position: relative;
-            top: auto;
-            right: auto;
-            margin: 1rem;
-            justify-content: center;
-          }
-
-          .header {
-            position: relative;
-            padding: 1rem 0;
-          }
-
-          .main-content {
-            padding-top: 2rem;
-          }
-
-          .chat-interface {
-            height: calc(100vh - 4rem);
-          }
+        .control-btn {
+          background: rgba(152, 64, 56, 0.35); /* Bright green */
+          color: white;
+          border: none;
+          border-radius: 6px;
+          padding: 0.5rem;
+          cursor: pointer;
+          font-size: 1rem;
+          transition: all 0.2s ease;
+          min-width: 36px;
+          height: 36px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
 
-        @media (max-width: 480px) {
-          .title {
-            font-size: 2rem;
-          }
-
-          .subtitle {
-            font-size: 1rem;
-          }
-
-          .input-wrapper,
-          .chat-input-wrapper {
-            flex-direction: column;
-            gap: 0.5rem;
-          }
-
-          .input-controls,
-          .chat-input-controls {
-            flex-direction: row;
-            justify-content: space-between;
-          }
+        .control-btn:hover {
+          background: rgb(152, 64, 56); /* Bright green */
+          transform: translateY(-1px);
         }
+
+        .control-btn.primary {
+          background: rgba(0, 0, 0, 0.84); /* Bright blue for send button */
+        }
+
+        .control-btn.primary:hover {
+          background: rgb(0, 0, 0);
+        }
+
+        .control-btn:disabled {
+          background: #cccccc;
+          cursor: not-allowed;
+        }
+        /* ==================== */
       `}</style>
 
       <div className="main-layout">
@@ -1453,7 +986,9 @@ function App() {
         <div className="status-bar">
           <div className="status-item">
             <div
-              className={`status-indicator ${enableChainOfThought ? "" : "disabled"}`}
+              className={`status-indicator ${
+                enableChainOfThought ? "" : "disabled"
+              }`}
             ></div>
             <span>CoT</span>
           </div>
@@ -1465,7 +1000,9 @@ function App() {
           </div>
           <div className="status-item">
             <div
-              className={`status-indicator ${enableSourceAttribution ? "" : "disabled"}`}
+              className={`status-indicator ${
+                enableSourceAttribution ? "" : "disabled"
+              }`}
             ></div>
             <span>Sources</span>
           </div>
@@ -1493,22 +1030,32 @@ function App() {
           </button>
         </div>
 
-        {/* Sidebar Toggle */}
+        {/* Sidebar Toggle (“≡”) */}
         <button
-          className="sidebar-toggle"
+          className="sidebar-button sidebar-toggle"
           onClick={() => setSidebarOpen(!sidebarOpen)}
+          title="Toggle Sidebar"
         >
           ≡
         </button>
 
-        {/* Sidebar */}
+        {/* New Chat Shortcut (“➕”) */}
+        <button
+          className="sidebar-button new-chat-shortcut"
+          onClick={handleNewConversation}
+          title="New Chat"
+        >
+          📝
+        </button>
+
+        {/* Sidebar / Conversation List */}
         <div className="sidebar">
           <div className="sidebar-section">
             <button
               className="sidebar-btn primary"
               onClick={handleNewConversation}
             >
-              ➕ New Chat
+              📝 New Chat
             </button>
           </div>
 
@@ -1518,7 +1065,9 @@ function App() {
               {allConversations.map((conv) => (
                 <div
                   key={conv.conversation_id}
-                  className={`conversation-item ${conv.conversation_id === conversationId ? "active" : ""}`}
+                  className={`conversation-item ${
+                    conv.conversation_id === conversationId ? "active" : ""
+                  }`}
                   onClick={() => handleSwitchConversation(conv.conversation_id)}
                 >
                   <div className="conversation-title">
@@ -1538,57 +1087,6 @@ function App() {
           </div>
 
           <div className="sidebar-section">
-            <h3>Document Upload</h3>
-            <div className="file-upload-area" onClick={handleFilePicker}>
-              {file ? (
-                <div>📄 {file.name}</div>
-              ) : (
-                <div>Click to upload or drag & drop files</div>
-              )}
-            </div>
-
-            {availableDocuments.length > 0 && (
-              <>
-                <h4
-                  style={{
-                    margin: "1rem 0 0.5rem 0",
-                    fontSize: "0.9rem",
-                    color: "#800020",
-                  }}
-                >
-                  Available Documents
-                </h4>
-                <div className="document-list">
-                  {availableDocuments.map((doc) => (
-                    <div key={doc.document_id} className="document-item">
-                      <span className="document-name">{doc.filename}</span>
-                      <div className="document-actions">
-                        <button
-                          className="document-action"
-                          onClick={() => {
-                            setSelectedDocument(doc);
-                            setIncludeDocument(true);
-                          }}
-                          title="Select Document"
-                        >
-                          ✓
-                        </button>
-                        <button
-                          className="document-action"
-                          onClick={() => handleDeleteDocument(doc.document_id)}
-                          title="Delete Document"
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="sidebar-section">
             <h3>Actions</h3>
             <button className="sidebar-btn" onClick={handleClearConversation}>
               🗑️ Clear Current Chat
@@ -1597,175 +1095,184 @@ function App() {
               ⚠️ Clear All History
             </button>
           </div>
-
-          <div className="sidebar-section">
-            <div className="help-section">
-              <h4 style={{ margin: "0 0 0.5rem 0", color: "#800020" }}>
-                Keyboard Shortcuts
-              </h4>
-              <div className="help-item">
-                <span className="help-shortcut">Ctrl + Enter</span>
-                <span>Send to AI</span>
-              </div>
-              <div className="help-item">
-                <span className="help-shortcut">Shift + Enter</span>
-                <span>Search only</span>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Main Content */}
         <div className="main-content">
+          {/* 
+            If no conversation has started, show the “empty state” placeholder.
+            Otherwise, render ChatInterface (all chat UI lives there now).
+          */}
           {!hasStartedConversation ? (
-            /* Empty State - Central Input */
+            /* Empty State – drag/drop area + central input placeholder */
             <div className="empty-state">
               <div
-                className={`central-input-container ${dragOver ? "drag-over" : ""}`}
+                className={`central-input-container ${
+                  dragOver ? "drag-over" : ""
+                }`}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
               >
                 {selectedDocument && includeDocument && (
                   <div className="document-preview">
-                    📄 Document: {selectedDocument.filename}
+                    📄 {selectedDocument.filename}
+                    <div className="document-actions-inline">
+                      <button
+                        className="document-action-inline"
+                        onClick={() =>
+                          handleDeleteDocument(selectedDocument.document_id)
+                        }
+                        title="Delete Document"
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
                 )}
 
-                <div className="input-wrapper">
+                <div className="chat-input-wrapper">
                   <textarea
-                    className="main-input"
+                    className="chat-input"
                     value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
+                    onChange={handleTextareaChange}
                     onKeyDown={handleKeyPress}
-                    placeholder="Type your message here... 
-
-Ctrl+Enter to send to AI
-Shift+Enter for web search only"
+                    placeholder="Type your message here…"
                     disabled={llmLoading || docLoading || searchLoading}
+                    rows={1}
+                    style={{
+                      height: "44px",
+                      minHeight: "44px",
+                      maxHeight: "200px",
+                      resize: "none",
+                      overflow: "hidden",
+                    }}
                   />
 
-                  <div className="input-controls">
-                    <button
-                      className="control-btn"
-                      onClick={handleFilePicker}
-                      title="Attach File"
-                      disabled={llmLoading || docLoading}
-                    >
-                      ➕
-                    </button>
+                  <div className="chat-input-controls">
+                    <div className="chat-input-controls-left">
+                      <button
+                        className="control-btn"
+                        onClick={handleFilePicker}
+                        title="Attach File"
+                        disabled={llmLoading || docLoading}
+                      >
+                        ➕
+                      </button>
 
-                    <div className="tools-menu">
                       <button
                         className="control-btn"
                         onClick={() => setToolsMenuOpen(!toolsMenuOpen)}
                         title="Tools"
                       >
-                        ⚙️
+                        🛠️
                       </button>
-
-                      {toolsMenuOpen && (
-                        <div className="tools-dropdown open">
-                          <div
-                            className="tools-option"
-                            onClick={() =>
-                              setEnableChainOfThought(!enableChainOfThought)
-                            }
-                          >
-                            <div
-                              className={`tools-checkbox ${enableChainOfThought ? "checked" : ""}`}
-                            >
-                              {enableChainOfThought && "✓"}
-                            </div>
-                            <span className="tools-label">
-                              Chain of Thought
-                            </span>
-                          </div>
-
-                          <div
-                            className="tools-option"
-                            onClick={() => setIncludeSearch(!includeSearch)}
-                          >
-                            <div
-                              className={`tools-checkbox ${includeSearch ? "checked" : ""}`}
-                            >
-                              {includeSearch && "✓"}
-                            </div>
-                            <span className="tools-label">Web Search</span>
-                          </div>
-                        </div>
-                      )}
                     </div>
 
-                    <button
-                      className="control-btn primary"
-                      onClick={handlePromptSubmit}
-                      disabled={!prompt.trim() || llmLoading || docLoading}
-                      title="Send Message"
-                    >
-                      {llmLoading ? (
-                        <div className="loading-spinner"></div>
-                      ) : (
-                        "↑ "
-                      )}
-                    </button>
+                    <div className="chat-input-controls-right">
+                      <button
+                        className="control-btn"
+                        onClick={handleStandaloneSearch}
+                        disabled={!prompt.trim() || searchLoading}
+                        title="Search Only"
+                      >
+                        {searchLoading ? (
+                          <div className="loading-spinner"></div>
+                        ) : (
+                          "🔍"
+                        )}
+                      </button>
+                      <button
+                        className="control-btn primary"
+                        onClick={handlePromptSubmit}
+                        disabled={!prompt.trim() || llmLoading || docLoading}
+                        title="Send Message"
+                      >
+                        {llmLoading ? (
+                          <div className="loading-spinner"></div>
+                        ) : (
+                          "↑"
+                        )}
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                <div className="action-buttons">
-                  <div className="keyboard-shortcuts">
-                    Ctrl+Enter: AI • Shift+Enter: Search
-                  </div>
-                  <div className="action-group">
-                    <button
-                      className="control-btn"
-                      onClick={handleStandaloneSearch}
-                      disabled={!prompt.trim() || searchLoading}
-                      title="Search Only"
-                    >
-                      {searchLoading ? (
-                        <div className="loading-spinner"></div>
-                      ) : (
-                        "🔍"
-                      )}
-                    </button>
-                  </div>
+                  {llmError && <div className="error-message">{llmError}</div>}
+                  {docError && <div className="error-message">{docError}</div>}
+                  {searchError && (
+                    <div className="error-message">{searchError}</div>
+                  )}
                 </div>
-
-                {llmError && <div className="error-message">{llmError}</div>}
-                {docError && <div className="error-message">{docError}</div>}
-                {searchError && (
-                  <div className="error-message">{searchError}</div>
-                )}
               </div>
             </div>
           ) : (
-            /* Active Chat Interface */
+            /* Active Chat Interface – now fully handled by ChatInterface.jsx */
             <ChatInterface
+              conversationId={conversationId}
               conversationHistory={conversationHistory}
-              prompt={prompt}
-              setPrompt={setPrompt}
-              onSubmit={handlePromptSubmit}
-              onSearch={handleStandaloneSearch}
-              onKeyPress={handleKeyPress}
-              llmLoading={llmLoading}
-              searchLoading={searchLoading}
-              llmError={llmError}
-              searchError={searchError}
-              docError={docError}
+              includeSearch={includeSearch}
+              setIncludeSearch={setIncludeSearch}
               searchResults={searchResults}
               reasoningSteps={reasoningSteps}
               sourcesUsed={sourcesUsed}
+              availableDocuments={availableDocuments}
               selectedDocument={selectedDocument}
+              setSelectedDocument={setSelectedDocument}
               includeDocument={includeDocument}
-              includeSearch={includeSearch}
-              setIncludeSearch={setIncludeSearch}
-              enableChainOfThought={enableChainOfThought}
-              setEnableChainOfThought={setEnableChainOfThought}
-              onFilePicker={handleFilePicker}
+              setIncludeDocument={setIncludeDocument}
+              llmLoading={llmLoading}
+              docLoading={docLoading}
+              searchLoading={searchLoading}
+              llmError={llmError}
+              docError={docError}
+              searchError={searchError}
+              handlePromptSubmit={handlePromptSubmit}
+              handleStandaloneSearch={handleStandaloneSearch}
+              handleKeyPress={handleKeyPress}
+              handleFilePicker={handleFilePicker}
+              handleDeleteDocument={handleDeleteDocument}
               toolsMenuOpen={toolsMenuOpen}
               setToolsMenuOpen={setToolsMenuOpen}
+              enableChainOfThought={enableChainOfThought}
+              setEnableChainOfThought={setEnableChainOfThought}
             />
+          )}
+
+          {/*
+            ========================
+            BOTTOM-CENTER INPUT AREA
+            ========================
+            This only shows when a conversation exists.
+          */}
+          {hasStartedConversation && (
+            <div className="central-input-container">
+              <div className="chat-input-wrapper">
+                <textarea
+                  className="chat-input"
+                  placeholder="Type your message here…"
+                  value={prompt}
+                  onChange={handleTextareaChange}
+                  onKeyDown={handleKeyPress}
+                  disabled={llmLoading || docLoading || searchLoading}
+                  rows={1}
+                  style={{
+                    height: "44px",
+                    minHeight: "44px",
+                    maxHeight: "200px",
+                    resize: "none",
+                    overflow: "hidden",
+                  }}
+                />
+                <div className="chat-input-controls">
+                  <button
+                    onClick={handlePromptSubmit}
+                    disabled={!prompt.trim() || llmLoading || docLoading}
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>
