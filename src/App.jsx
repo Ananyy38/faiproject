@@ -569,16 +569,19 @@ function App() {
   const handleFilePicker = () => {
     const input = document.createElement("input");
     input.type = "file";
-    input.onchange = (e) => {
-      const selectedFile = e.target.files[0];
+    input.accept = ".pdf,.txt,.docx,.csv"; // Add your supported formats
+
+    input.onchange = (event) => {
+      const selectedFile = event.target.files[0];
       if (selectedFile) {
+        // Make sure you're updating the file state immediately
         setFile(selectedFile);
-        setDocError("");
-        setTimeout(() => {
-          handleFileUpload();
-        }, 100);
+
+        // If you need to process the file immediately
+        handleFileUpload(selectedFile);
       }
     };
+
     input.click();
   };
 
@@ -892,51 +895,59 @@ function App() {
         .central-input-container {
           position: fixed;
           bottom: 20px;
-          left: 0;
+          left: 50%;
+          transform: translateX(-50%);
           width: 100%;
-          display: flex;
-          justify-content: center;
-          z-index: 100;
+          max-width: 883px;
+          z-index: 1000;
+          padding: 0 20px;
         }
 
         .chat-input-wrapper {
-          width: 100%;
-          max-width: 850px; /* ← adjust as needed */
-          padding: 1rem;
           background: rgba(255, 255, 255, 0.95);
-          border: 1px solid rgba(128, 0, 32, 0.15);
-          border-radius: 12px;
-          box-shadow: 0 4px 12px rgba(128, 0, 32, 0.08);
+          border: 1px solid rgba(128, 0, 32, 0.2);
+          border-radius: 16px;
+          padding: 12px;
+          backdrop-filter: blur(20px);
+          box-shadow: 0 8px 32px rgba(128, 0, 32, 0.1);
+          transition: all 0.2s ease;
+        }
+
+        .chat-input-wrapper:focus-within {
+          border-color: rgba(128, 0, 32, 0.4);
+          box-shadow: 0 8px 32px rgba(128, 0, 32, 0.15);
         }
 
         .chat-input {
           width: 100%;
-          padding: 0.75rem 1rem;
-          border-radius: 8px;
-          border: 1px solid rgba(128, 0, 32, 0.2);
+          border: none;
+          outline: none;
+          background: transparent;
           font-size: 1rem;
+          font-family: inherit;
+          color: #2c1810;
+          line-height: 1.5;
           resize: none;
-          box-sizing: border-box;
+        }
+
+        .chat-input::placeholder {
+          color: #8b5a3c;
+          opacity: 0.7;
         }
 
         .chat-input-controls {
-          margin-top: 0.5rem;
           display: flex;
           justify-content: space-between;
           align-items: center;
+          margin-top: 8px;
+          gap: 8px;
         }
 
-        .chat-input-controls-left {
-          display: flex;
-          gap: 0.5rem;
-        }
-
+        .chat-input-controls-left,
         .chat-input-controls-right {
           display: flex;
-          gap: 0.5rem;
-          align-items: center;
+          gap: 8px;
         }
-
         .control-btn {
           background: rgba(152, 64, 56, 0.35); /* Bright green */
           color: white;
@@ -970,9 +981,173 @@ function App() {
           background: #cccccc;
           cursor: not-allowed;
         }
+        .tools-menu {
+          position: absolute;
+          width: 800px; /* set fixed width */
+          left: 50%; /* move left edge to center of parent */
+          transform: translateX(-50%); /* shift back by half its own width */
+          bottom: 100%;
+          margin-bottom: 10px;
+          background: rgba(255, 255, 255, 0.98);
+          border: 1px solid rgba(128, 0, 32, 0.2);
+          border-radius: 12px;
+          backdrop-filter: blur(20px);
+          box-shadow: 0 8px 32px rgba(128, 0, 32, 0.15);
+          z-index: 1001;
+        }
+
+        .tools-menu-content {
+          padding: 1.5rem;
+          max-height: 400px;
+          overflow-y: auto;
+        }
+
+        .tools-menu h3 {
+          margin: 0 0 1rem 0;
+          color: #800020;
+          font-size: 1.1rem;
+          font-weight: 600;
+          border-bottom: 1px solid rgba(128, 0, 32, 0.2);
+          padding-bottom: 0.5rem;
+        }
+
+        .tool-section {
+          margin-bottom: 1.5rem;
+        }
+
+        .tool-section h4 {
+          margin: 0 0 0.75rem 0;
+          color: #2c1810;
+          font-size: 0.9rem;
+          font-weight: 500;
+        }
+
+        .tool-option {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin-bottom: 0.5rem;
+          font-size: 0.9rem;
+          color: #2c1810;
+          cursor: pointer;
+        }
+
+        .tool-option input[type="checkbox"] {
+          margin: 0;
+        }
+
+        .tool-option input[type="range"] {
+          flex: 1;
+          margin: 0 0.5rem;
+        }
+
+        .tool-option select {
+          flex: 1;
+          padding: 0.5rem;
+          border: 1px solid rgba(128, 0, 32, 0.2);
+          border-radius: 6px;
+          background: rgba(255, 255, 255, 0.9);
+          color: #2c1810;
+        }
+
+        .tool-subsection {
+          margin-left: 1rem;
+          margin-top: 0.5rem;
+        }
+
+        .tools-close-btn {
+          width: 100%;
+          background: rgba(128, 0, 32, 0.1);
+          border: 1px solid rgba(128, 0, 32, 0.2);
+          border-radius: 8px;
+          padding: 0.75rem;
+          color: #800020;
+          cursor: pointer;
+          font-size: 0.9rem;
+          transition: all 0.3s ease;
+          margin-top: 1rem;
+        }
+
+        .tools-close-btn:hover {
+          background: rgba(128, 0, 32, 0.2);
+          transform: translateY(-1px);
+        }
+
+        /* Document preview styles */
+        .document-preview {
+          background: rgba(128, 0, 32, 0.1);
+          border: 1px solid rgba(128, 0, 32, 0.2);
+          border-radius: 8px;
+          padding: 0.75rem;
+          margin-bottom: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          font-size: 0.9rem;
+          color: #800020;
+        }
+
+        .document-actions-inline {
+          display: flex;
+          gap: 0.5rem;
+        }
+
+        .document-action-inline {
+          background: none;
+          border: none;
+          cursor: pointer;
+          font-size: 0.9rem;
+          color: #800020;
+          opacity: 0.7;
+          transition: opacity 0.2s ease;
+        }
+
+        .document-action-inline:hover {
+          opacity: 1;
+        }
+
+        /* Loading spinner */
+        .loading-spinner {
+          width: 16px;
+          height: 16px;
+          border: 2px solid rgba(255, 255, 255, 0.3);
+          border-top: 2px solid white;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+          0% {
+            transform: rotate(0deg);
+          }
+          100% {
+            transform: rotate(360deg);
+          }
+        }
+
+        /* Error messages */
+        .error-message {
+          background: rgba(220, 53, 69, 0.1);
+          border: 1px solid rgba(220, 53, 69, 0.3);
+          border-radius: 8px;
+          padding: 0.75rem;
+          margin-top: 8px;
+          color: #dc3545;
+          font-size: 0.9rem;
+        }
+
+        /* Drag over state */
+        .drag-over {
+          transform: translateX(-50%) scale(1.02);
+          box-shadow: 0 12px 40px rgba(128, 0, 32, 0.2);
+        }
+
+        .drag-over .chat-input-wrapper {
+          border-color: rgba(128, 0, 32, 0.5);
+          background: rgba(128, 0, 32, 0.05);
+        }
         /* ==================== */
       `}</style>
-
       <div className="main-layout">
         {/* Header */}
         <div className="header">
@@ -981,7 +1156,6 @@ function App() {
             Intelligent conversations with advanced reasoning and search
           </p>
         </div>
-
         {/* Status Bar */}
         <div className="status-bar">
           <div className="status-item">
@@ -1007,7 +1181,6 @@ function App() {
             <span>Sources</span>
           </div>
         </div>
-
         {/* Import/Export Controls */}
         <div className="import-export-controls">
           <button
@@ -1029,8 +1202,7 @@ function App() {
             🗑️ Cache
           </button>
         </div>
-
-        {/* Sidebar Toggle (“≡”) */}
+        {/* Sidebar Toggle ("≡") */}
         <button
           className="sidebar-button sidebar-toggle"
           onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -1038,8 +1210,7 @@ function App() {
         >
           ≡
         </button>
-
-        {/* New Chat Shortcut (“➕”) */}
+        {/* New Chat Shortcut ("➕") */}
         <button
           className="sidebar-button new-chat-shortcut"
           onClick={handleNewConversation}
@@ -1047,7 +1218,6 @@ function App() {
         >
           📝
         </button>
-
         {/* Sidebar / Conversation List */}
         <div className="sidebar">
           <div className="sidebar-section">
@@ -1096,11 +1266,10 @@ function App() {
             </button>
           </div>
         </div>
-
         {/* Main Content */}
         <div className="main-content">
           {/* 
-            If no conversation has started, show the “empty state” placeholder.
+            If no conversation has started, show the "empty state" placeholder.
             Otherwise, render ChatInterface (all chat UI lives there now).
           */}
           {!hasStartedConversation ? (
@@ -1171,18 +1340,6 @@ function App() {
 
                     <div className="chat-input-controls-right">
                       <button
-                        className="control-btn"
-                        onClick={handleStandaloneSearch}
-                        disabled={!prompt.trim() || searchLoading}
-                        title="Search Only"
-                      >
-                        {searchLoading ? (
-                          <div className="loading-spinner"></div>
-                        ) : (
-                          "🔍"
-                        )}
-                      </button>
-                      <button
                         className="control-btn primary"
                         onClick={handlePromptSubmit}
                         disabled={!prompt.trim() || llmLoading || docLoading}
@@ -1203,10 +1360,149 @@ function App() {
                     <div className="error-message">{searchError}</div>
                   )}
                 </div>
+                {/* Add this right after the chat-input-wrapper div closes */}
+                {toolsMenuOpen && (
+                  <div className="tools-menu">
+                    <div className="tools-menu-content">
+                      <h3>Configuration</h3>
+
+                      <div className="tool-section">
+                        <h4>Search Settings</h4>
+                        <label className="tool-option">
+                          <input
+                            type="checkbox"
+                            checked={includeSearch}
+                            onChange={(e) => setIncludeSearch(e.target.checked)}
+                          />
+                          Enable Web Search
+                        </label>
+                      </div>
+
+                      <div className="tool-section">
+                        <h4>Chain of Thought</h4>
+                        <label className="tool-option">
+                          <input
+                            type="checkbox"
+                            checked={enableChainOfThought}
+                            onChange={(e) =>
+                              setEnableChainOfThought(e.target.checked)
+                            }
+                          />
+                          Enable Chain of Thought
+                        </label>
+                        {enableChainOfThought && (
+                          <div className="tool-subsection">
+                            <label className="tool-option">
+                              Reasoning Depth:
+                              <input
+                                type="range"
+                                min="1"
+                                max="5"
+                                value={reasoningDepth}
+                                onChange={(e) =>
+                                  setReasoningDepth(parseInt(e.target.value))
+                                }
+                              />
+                              <span>{reasoningDepth}</span>
+                            </label>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="tool-section">
+                        <h4>Document Settings</h4>
+                        <label className="tool-option">
+                          <input
+                            type="checkbox"
+                            checked={enableSourceAttribution}
+                            onChange={(e) =>
+                              setEnableSourceAttribution(e.target.checked)
+                            }
+                          />
+                          Enable Source Attribution
+                        </label>
+                        <label className="tool-option">
+                          <input
+                            type="checkbox"
+                            checked={enableChunking}
+                            onChange={(e) =>
+                              setEnableChunking(e.target.checked)
+                            }
+                          />
+                          Enable Document Chunking
+                        </label>
+                        {enableChunking && (
+                          <div className="tool-subsection">
+                            <label className="tool-option">
+                              Chunk Size:
+                              <input
+                                type="range"
+                                min="500"
+                                max="5000"
+                                step="500"
+                                value={chunkSize}
+                                onChange={(e) =>
+                                  setChunkSize(parseInt(e.target.value))
+                                }
+                              />
+                              <span>{chunkSize}</span>
+                            </label>
+                          </div>
+                        )}
+                      </div>
+
+                      {availableDocuments.length > 0 && (
+                        <div className="tool-section">
+                          <h4>Available Documents</h4>
+                          <select
+                            value={selectedDocument?.document_id || ""}
+                            onChange={(e) => {
+                              const doc = availableDocuments.find(
+                                (d) => d.document_id === e.target.value
+                              );
+                              setSelectedDocument(doc || null);
+                            }}
+                          >
+                            <option value="">Select a document...</option>
+                            {availableDocuments.map((doc) => (
+                              <option
+                                key={doc.document_id}
+                                value={doc.document_id}
+                              >
+                                {doc.filename}
+                              </option>
+                            ))}
+                          </select>
+                          {selectedDocument && (
+                            <label className="tool-option">
+                              <input
+                                type="checkbox"
+                                checked={includeDocument}
+                                onChange={(e) =>
+                                  setIncludeDocument(e.target.checked)
+                                }
+                              />
+                              Include in conversation
+                            </label>
+                          )}
+                        </div>
+                      )}
+
+                      <button
+                        className="tools-close-btn"
+                        onClick={() => setToolsMenuOpen(false)}
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
             /* Active Chat Interface – now fully handled by ChatInterface.jsx */
+            // Replace your ChatInterface component call in App.js with this:
+
             <ChatInterface
               conversationId={conversationId}
               conversationHistory={conversationHistory}
@@ -1235,47 +1531,31 @@ function App() {
               setToolsMenuOpen={setToolsMenuOpen}
               enableChainOfThought={enableChainOfThought}
               setEnableChainOfThought={setEnableChainOfThought}
+              // ADD ALL THESE MISSING PROPS:
+              prompt={prompt}
+              setPrompt={setPrompt}
+              handleTextareaChange={handleTextareaChange}
+              dragOver={dragOver}
+              setDragOver={setDragOver}
+              handleDragOver={handleDragOver}
+              handleDragLeave={handleDragLeave}
+              handleDrop={handleDrop}
+              file={file}
+              setFile={setFile}
+              enableSourceAttribution={enableSourceAttribution}
+              setEnableSourceAttribution={setEnableSourceAttribution}
+              reasoningDepth={reasoningDepth}
+              setReasoningDepth={setReasoningDepth}
+              enableChunking={enableChunking}
+              setEnableChunking={setEnableChunking}
+              chunkSize={chunkSize}
+              setChunkSize={setChunkSize}
             />
           )}
-
-          {/*
-            ========================
-            BOTTOM-CENTER INPUT AREA
-            ========================
-            This only shows when a conversation exists.
-          */}
-          {hasStartedConversation && (
-            <div className="central-input-container">
-              <div className="chat-input-wrapper">
-                <textarea
-                  className="chat-input"
-                  placeholder="Type your message here…"
-                  value={prompt}
-                  onChange={handleTextareaChange}
-                  onKeyDown={handleKeyPress}
-                  disabled={llmLoading || docLoading || searchLoading}
-                  rows={1}
-                  style={{
-                    height: "44px",
-                    minHeight: "44px",
-                    maxHeight: "200px",
-                    resize: "none",
-                    overflow: "hidden",
-                  }}
-                />
-                <div className="chat-input-controls">
-                  <button
-                    onClick={handlePromptSubmit}
-                    disabled={!prompt.trim() || llmLoading || docLoading}
-                  >
-                    Send
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+        </div>{" "}
+        {/* closes .main-content */}
+      </div>{" "}
+      {/* closes .main-layout */}
     </div>
   );
 }

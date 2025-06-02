@@ -15,12 +15,19 @@ from pydantic import BaseModel
 
 # ==================== PYDANTIC MODELS ====================
 
+class ReasoningStep(BaseModel):  # For Chain of Thought - MOVED UP before Message
+    step_number: int
+    description: str
+    action: str  # "analyze", "search", "synthesize", "conclude"
+    content: str
+    sources_used: Optional[List[str]] = None
+
 class Message(BaseModel):
     role: str  # "user" or "assistant"
     content: str
     timestamp: Optional[str] = None
     sources: Optional[List[str]] = None
-    reasoning_steps: Optional[List[str]] = None  # Chain of Thought steps
+    reasoning_steps: Optional[List[ReasoningStep]] = None  # CHANGED: List[str] -> List[ReasoningStep]
 
 class SearchResult(BaseModel):
     title: str
@@ -48,13 +55,6 @@ class DocumentContext(BaseModel):
     upload_time: str
     chunks: Optional[List[DocumentChunk]] = None
     content_length: int = 0
-
-class ReasoningStep(BaseModel):  # For Chain of Thought
-    step_number: int
-    description: str
-    action: str  # "analyze", "search", "synthesize", "conclude"
-    content: str
-    sources_used: Optional[List[str]] = None
 
 class LLMRequest(BaseModel):
     prompt: str

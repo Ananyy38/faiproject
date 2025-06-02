@@ -135,7 +135,8 @@ async def llm_endpoint(req: LLMRequest, db: Session = Depends(get_db)):
         
         # Save assistant message to database
         add_message(db, req.conversation_id, "assistant", answer, sources_used, 
-                   [step.__dict__ for step in reasoning_steps] if reasoning_steps else None)
+           reasoning_steps)
+
         
         # Get updated context
         updated_messages = get_conversation_messages(db, req.conversation_id)
@@ -660,7 +661,7 @@ async def batch_llm_requests(requests: List[LLMRequest], db: Session = Depends(g
             # Save user and assistant messages to database
             add_message(db, req.conversation_id, "user", req.prompt)
             add_message(db, req.conversation_id, "assistant", answer, sources_used, 
-                       [step.__dict__ for step in reasoning_steps] if reasoning_steps else None)
+           reasoning_steps)
             
             # Get updated context
             updated_messages = get_conversation_messages(db, req.conversation_id)
