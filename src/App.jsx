@@ -780,7 +780,7 @@ function App() {
         .sidebar {
           position: fixed;
           top: 0;
-          left: ${sidebarOpen ? "0" : "-350px"};
+          left: ${sidebarOpen ? "0" : "-400px"};
           width: 350px;
           height: 100vh;
           background: rgba(255, 255, 255, 0.95);
@@ -1216,6 +1216,7 @@ function App() {
           margin: 0 0 1rem 0;
           padding-bottom: 0.5rem;
           border-bottom: 1px solid rgba(128, 0, 32, 0.2);
+          z-index: 1;
         }
 
         .sidebar-section {
@@ -1284,6 +1285,10 @@ function App() {
           color: #2c1810;
           margin-bottom: 0.25rem;
           font-size: 0.9rem;
+        }
+
+        .title-input-container /* or the input’s wrapper */ {
+          z-index: 0;
         }
 
         .conversation-meta {
@@ -1701,7 +1706,7 @@ Shift+Enter for web search only"
                       {llmLoading ? (
                         <div className="loading-spinner"></div>
                       ) : (
-                        "→"
+                        "↑ "
                       )}
                     </button>
                   </div>
