@@ -105,6 +105,12 @@ async def search_endpoint(req: SearchRequest):
 async def llm_endpoint(req: LLMRequest, db: Session = Depends(get_db)):
     """Main LLM endpoint with Chain of Thought reasoning and database persistence"""
     try:
+        # Ensure conversation exists (create if it doesn't)
+        conversation = get_conversation(db, req.conversation_id)
+        if not conversation:
+            conversation = create_conversation(db, req.conversation_id)
+            print(f"Created new conversation: {req.conversation_id}")
+        
         # Get conversation context from database
         messages = get_conversation_messages(db, req.conversation_id)
         context = [Message(
@@ -133,10 +139,13 @@ async def llm_endpoint(req: LLMRequest, db: Session = Depends(get_db)):
         # Save user message to database
         add_message(db, req.conversation_id, "user", req.prompt)
         
+        # Convert ReasoningStep objects to dictionaries for database storage
+        reasoning_steps_dict = None
+        if reasoning_steps:
+            reasoning_steps_dict = [step.dict() for step in reasoning_steps]
+        
         # Save assistant message to database
-        add_message(db, req.conversation_id, "assistant", answer, sources_used, 
-           reasoning_steps)
-
+        add_message(db, req.conversation_id, "assistant", answer, sources_used, reasoning_steps_dict)
         
         # Get updated context
         updated_messages = get_conversation_messages(db, req.conversation_id)
@@ -193,8 +202,6 @@ async def upload_document(file: UploadFile = File(...), enable_chunking: bool = 
         raise HTTPException(status_code=500, detail=f"Failed to process document: {e}")
 
 # ==================== CONVERSATION MANAGEMENT ====================
-
-# ==================== CONVERSATION MANAGEMENT ENDPOINTS ====================
 
 @app.get("/api/conversations")
 async def list_conversations(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
@@ -276,75 +283,6 @@ async def clear_all_conversations(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to clear conversations: {e}")
 
-# ==================== ENHANCED LLM ENDPOINT ====================
-
-@app.post("/api/llm", response_model=LLMResponse)
-async def llm_endpoint(req: LLMRequest, db: Session = Depends(get_db)):
-    """Main LLM endpoint with Chain of Thought reasoning and database persistence"""
-    try:
-        # Ensure conversation exists (create if it doesn't)
-        conversation = get_conversation(db, req.conversation_id)
-        if not conversation:
-            conversation = create_conversation(db, req.conversation_id)
-            print(f"Created new conversation: {req.conversation_id}")
-        
-        # Get conversation context from database
-        messages = get_conversation_messages(db, req.conversation_id)
-        context = [Message(
-            role=msg.role,
-            content=msg.content,
-            timestamp=msg.timestamp.isoformat(),
-            sources=msg.sources or [],
-            reasoning_steps=msg.reasoning_steps or []
-        ) for msg in messages]
-        
-        if req.context:
-            context = req.context
-        
-        # Enhanced LLM call with Chain of Thought
-        tool = LLMTool()
-        answer, search_results, document_used, sources_used, metadata, reasoning_steps = tool.call(
-            req.prompt, 
-            context, 
-            req.include_search,
-            req.document_context,
-            req.enable_source_attribution,
-            req.enable_chain_of_thought,
-            req.reasoning_depth
-        )
-        
-        # Save user message to database
-        add_message(db, req.conversation_id, "user", req.prompt)
-        
-        # Save assistant message to database
-        add_message(db, req.conversation_id, "assistant", answer, sources_used, 
-                   [step.__dict__ for step in reasoning_steps] if reasoning_steps else None)
-        
-        # Get updated context
-        updated_messages = get_conversation_messages(db, req.conversation_id)
-        updated_context = [Message(
-            role=msg.role,
-            content=msg.content,
-            timestamp=msg.timestamp.isoformat(),
-            sources=msg.sources or [],
-            reasoning_steps=msg.reasoning_steps or []
-        ) for msg in updated_messages]
-        
-        return LLMResponse(
-            response=answer,
-            conversation_id=req.conversation_id,
-            updated_context=updated_context,
-            search_results=search_results,
-            document_used=document_used,
-            sources_used=sources_used,
-            response_metadata=metadata,
-            reasoning_steps=reasoning_steps
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ==================== NEW CONVERSATION STATE ENDPOINT ====================
-
 @app.get("/api/conversations/state/{conversation_id}")
 async def get_conversation_state(conversation_id: str, db: Session = Depends(get_db)):
     """Get conversation state (exists, message count, etc.)"""
@@ -370,8 +308,6 @@ async def get_conversation_state(conversation_id: str, db: Session = Depends(get
         "created_at": conversation.created_at.isoformat(),
         "updated_at": conversation.updated_at.isoformat()
     }
-
-# ==================== CONVERSATION UTILITIES ====================
 
 @app.post("/api/conversations/{conversation_id}/auto-title")
 async def auto_generate_title(conversation_id: str, db: Session = Depends(get_db)):
@@ -404,6 +340,7 @@ async def auto_generate_title(conversation_id: str, db: Session = Depends(get_db
         "title": title,
         "message": "Title generated successfully"
     }
+
 # ==================== DOCUMENT MANAGEMENT ====================
 
 @app.get("/api/documents")
@@ -658,10 +595,16 @@ async def batch_llm_requests(requests: List[LLMRequest], db: Session = Depends(g
                 req.reasoning_depth
             )
             
-            # Save user and assistant messages to database
+            # Save user message to database
             add_message(db, req.conversation_id, "user", req.prompt)
-            add_message(db, req.conversation_id, "assistant", answer, sources_used, 
-           reasoning_steps)
+            
+            # Convert ReasoningStep objects to dictionaries for database storage
+            reasoning_steps_dict = None
+            if reasoning_steps:
+                reasoning_steps_dict = [step.dict() for step in reasoning_steps]
+            
+            # Save assistant message to database
+            add_message(db, req.conversation_id, "assistant", answer, sources_used, reasoning_steps_dict)
             
             # Get updated context
             updated_messages = get_conversation_messages(db, req.conversation_id)
