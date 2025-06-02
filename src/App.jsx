@@ -542,24 +542,25 @@ function App() {
           min-height: 100vh;
           background: linear-gradient(
             135deg,
-            #0f0f0f 0%,
-            #1a1a1a 50%,
-            #0f0f0f 100%
+            #faf8f5 0%,
+            #f5f2ed 50%,
+            #f8f5f0 100%
           );
           font-family:
             "Inter",
             -apple-system,
             BlinkMacSystemFont,
             sans-serif;
-          color: #ffffff;
+          color: #2c1810;
           overflow-x: hidden;
         }
 
         .glass-effect {
-          background: rgba(255, 255, 255, 0.02);
+          background: rgba(255, 255, 255, 0.85);
           backdrop-filter: blur(20px);
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          border: 1px solid rgba(128, 0, 32, 0.15);
           border-radius: 16px;
+          box-shadow: 0 8px 32px rgba(128, 0, 32, 0.08);
         }
 
         .main-content {
@@ -588,10 +589,10 @@ function App() {
 
         @keyframes pulse {
           0% {
-            opacity: 0.3;
+            opacity: 0.4;
           }
           100% {
-            opacity: 1;
+            opacity: 0.8;
           }
         }
 
@@ -601,29 +602,29 @@ function App() {
           margin: 0;
           background: linear-gradient(
             135deg,
-            #ffffff 0%,
-            #800020 50%,
-            #ff6b9d 100%
+            #800020 0%,
+            #a0002a 50%,
+            #c41e3a 100%
           );
           -webkit-background-clip: text;
           background-clip: text;
           -webkit-text-fill-color: transparent;
-          text-shadow: 0 0 30px rgba(128, 0, 32, 0.3);
+          text-shadow: 0 2px 8px rgba(128, 0, 32, 0.2);
           letter-spacing: -0.02em;
         }
 
         .subtitle {
           font-size: 1.1rem;
-          color: #888;
+          color: #8b5a3c;
           margin-top: 0.5rem;
-          font-weight: 300;
+          font-weight: 400;
         }
 
         .system-status {
-          background: rgba(128, 0, 32, 0.1);
-          border: 1px solid rgba(128, 0, 32, 0.3);
+          background: rgba(255, 255, 255, 0.9);
+          border: 1px solid rgba(128, 0, 32, 0.2);
           border-radius: 12px;
-          padding: 1rem;
+          padding: 1.25rem;
           margin-bottom: 2rem;
           font-family: "JetBrains Mono", monospace;
           font-size: 0.85rem;
@@ -633,12 +634,14 @@ function App() {
           flex-wrap: wrap;
           gap: 1rem;
           transition: all 0.3s ease;
+          box-shadow: 0 4px 16px rgba(128, 0, 32, 0.08);
         }
 
         .system-status:hover {
-          background: rgba(128, 0, 32, 0.15);
-          border-color: rgba(128, 0, 32, 0.5);
+          background: rgba(255, 255, 255, 0.95);
+          border-color: rgba(128, 0, 32, 0.3);
           transform: translateY(-2px);
+          box-shadow: 0 8px 24px rgba(128, 0, 32, 0.12);
         }
 
         .status-item {
@@ -651,40 +654,42 @@ function App() {
           width: 8px;
           height: 8px;
           border-radius: 50%;
-          background: #00ff88;
-          box-shadow: 0 0 10px #00ff88;
+          background: #00b854;
+          box-shadow: 0 0 8px rgba(0, 184, 84, 0.6);
           animation: glow 2s ease-in-out infinite alternate;
         }
 
         .status-indicator.disabled {
-          background: #666;
+          background: #bdb5ab;
           box-shadow: none;
           animation: none;
         }
 
         @keyframes glow {
           0% {
-            box-shadow: 0 0 5px #00ff88;
+            box-shadow: 0 0 4px rgba(0, 184, 84, 0.4);
           }
           100% {
             box-shadow:
-              0 0 20px #00ff88,
-              0 0 30px #00ff88;
+              0 0 12px rgba(0, 184, 84, 0.8),
+              0 0 20px rgba(0, 184, 84, 0.4);
           }
         }
 
         .cot-settings {
-          background: rgba(128, 0, 32, 0.08);
-          border: 1px solid rgba(128, 0, 32, 0.2);
+          background: rgba(255, 255, 255, 0.9);
+          border: 1px solid rgba(128, 0, 32, 0.15);
           border-radius: 16px;
           padding: 1.5rem;
           margin-bottom: 2rem;
           transition: all 0.3s ease;
+          box-shadow: 0 4px 16px rgba(128, 0, 32, 0.06);
         }
 
         .cot-settings:hover {
-          background: rgba(128, 0, 32, 0.12);
-          border-color: rgba(128, 0, 32, 0.3);
+          background: rgba(255, 255, 255, 0.95);
+          border-color: rgba(128, 0, 32, 0.25);
+          box-shadow: 0 8px 24px rgba(128, 0, 32, 0.1);
         }
 
         .cot-header {
@@ -698,7 +703,7 @@ function App() {
           font-size: 1.1rem;
           font-weight: 600;
           margin: 0;
-          color: #ffffff;
+          color: #800020;
         }
 
         .brain-icon {
@@ -747,8 +752,8 @@ function App() {
           left: 0;
           height: 20px;
           width: 20px;
-          background: rgba(255, 255, 255, 0.1);
-          border: 2px solid rgba(128, 0, 32, 0.5);
+          background: rgba(255, 255, 255, 0.8);
+          border: 2px solid rgba(128, 0, 32, 0.4);
           border-radius: 4px;
           transition: all 0.3s ease;
         }
@@ -776,11 +781,11 @@ function App() {
         }
 
         .modern-select {
-          background: rgba(255, 255, 255, 0.05);
+          background: rgba(255, 255, 255, 0.9);
           border: 1px solid rgba(128, 0, 32, 0.3);
           border-radius: 8px;
           padding: 0.5rem 0.75rem;
-          color: #ffffff;
+          color: #2c1810;
           font-size: 0.9rem;
           margin-left: 0.5rem;
           transition: all 0.3s ease;
@@ -789,17 +794,18 @@ function App() {
         .modern-select:focus {
           outline: none;
           border-color: #800020;
-          box-shadow: 0 0 0 3px rgba(128, 0, 32, 0.2);
+          box-shadow: 0 0 0 3px rgba(128, 0, 32, 0.15);
+          background: rgba(255, 255, 255, 1);
         }
 
         .modern-select option {
-          background: #1a1a1a;
-          color: #ffffff;
+          background: #faf8f5;
+          color: #2c1810;
         }
 
         .control-label {
           font-size: 0.9rem;
-          color: #cccccc;
+          color: #800020;
           font-weight: 500;
         }
 
@@ -834,7 +840,7 @@ function App() {
 
         /* Accessibility improvements */
         .modern-checkbox:focus-within .checkmark {
-          box-shadow: 0 0 0 3px rgba(128, 0, 32, 0.3);
+          box-shadow: 0 0 0 3px rgba(128, 0, 32, 0.2);
         }
 
         .modern-select:focus,
@@ -846,13 +852,14 @@ function App() {
         /* High contrast mode support */
         @media (prefers-contrast: high) {
           .title {
-            -webkit-text-fill-color: #ffffff;
+            -webkit-text-fill-color: #800020;
             text-shadow: none;
           }
 
           .system-status,
           .cot-settings {
             border-width: 2px;
+            background: rgba(255, 255, 255, 1);
           }
         }
 
