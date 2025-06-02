@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 
 function ChatInterface({
   conversationId,
@@ -29,6 +29,16 @@ function ChatInterface({
   enableChainOfThought,
   setEnableChainOfThought,
 }) {
+  const conversationFlowRef = useRef(null);
+
+  // Auto-scroll to bottom when new messages are added
+  useEffect(() => {
+    if (conversationFlowRef.current) {
+      conversationFlowRef.current.scrollTop =
+        conversationFlowRef.current.scrollHeight;
+    }
+  }, [conversationHistory, reasoningSteps, sourcesUsed, searchResults]);
+
   return (
     <div className="chat-interface">
       <style jsx>{`
@@ -37,8 +47,11 @@ function ChatInterface({
           flex-direction: column;
           flex: 1;
           padding: 0;
-          height: calc(100vh - 120px);
+          height: calc(
+            100vh - 300px
+          ); /* Adjusted to prevent overlap with input */
           margin-top: 40px;
+          margin-bottom: 20px; /* Add margin to prevent overlap */
           background: rgba(255, 255, 255, 0.85);
           backdrop-filter: blur(20px);
           border: 1px solid rgba(128, 0, 32, 0.15);
@@ -51,6 +64,10 @@ function ChatInterface({
             sans-serif;
           position: relative;
           box-shadow: 0 8px 32px rgba(128, 0, 32, 0.08);
+          max-width: 883px; /* Match typical prompt input width */
+          margin-left: auto;
+          margin-right: auto;
+          width: 100%;
         }
 
         .chat-interface::before {
@@ -301,6 +318,7 @@ function ChatInterface({
           overflow-y: auto;
           padding: 0;
           scroll-behavior: smooth;
+          padding-bottom: 0px; /* Add padding to create perfect alignment */
         }
 
         .conversation-flow::-webkit-scrollbar {
@@ -415,8 +433,10 @@ function ChatInterface({
         @media (max-width: 768px) {
           .chat-interface {
             border-radius: 0;
-            height: 100vh;
-            max-height: none;
+            height: calc(100vh - 230px);
+            max-width: none;
+            margin-left: 0;
+            margin-right: 0;
           }
 
           .message {
@@ -542,6 +562,7 @@ function ChatInterface({
 
         {/* Conversation History */}
         <div
+          ref={conversationFlowRef}
           className="conversation-flow"
           role="log"
           aria-label="Conversation history"
