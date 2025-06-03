@@ -1,7 +1,8 @@
-fastapi>=0.90.0
-uvicorn[standard]>=0.20.0
-pydantic>=1.10.0
-python-dotenv>=0.21.0
-PyPDFpython-multipart
-
-
+fastapi
+uvicorn
+pydantic
+python-dotenv
+pypdf
+python-multipart
+sqlalchemy
+requests
