@@ -2,14 +2,18 @@ import os
 from typing import List
 from datetime import datetime
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
+from fastapi import FastAPI, HTTPException, Depends, File, UploadFile  # Added File and UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 # Import our organized modules
 from models import (
-    Message, SearchRequest, SearchResponse, LLMRequest, LLMResponse,
-    DocumentResponse, ConversationExport, SummaryRequest, SummaryResponse,
+    Message,
+    SearchRequest, SearchResponse,
+    LLMRequest, LLMResponse,
+    DocumentResponse,
+    ConversationExport,  # <-- New Pydantic model for export
+    SummaryRequest, SummaryResponse,
     VisualizationRequest, VisualizationResponse
 )
 from services import (
@@ -52,7 +56,10 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"],
+    allow_origins=[
+        "http://localhost:3000", "http://localhost:3001",
+        "http://127.0.0.1:3000", "http://127.0.0.1:3001"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,7 +74,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {
-        "status": "healthy", 
+        "status": "healthy",
         "service": "SynthesisTalk Backend",
         "version": "1.4.0",
         "features": {
@@ -113,13 +120,16 @@ async def llm_endpoint(req: LLMRequest, db: Session = Depends(get_db)):
         
         # Get conversation context from database
         messages = get_conversation_messages(db, req.conversation_id)
-        context = [Message(
-            role=msg.role,
-            content=msg.content,
-            timestamp=msg.timestamp.isoformat(),
-            sources=msg.sources or [],
-            reasoning_steps=msg.reasoning_steps or []
-        ) for msg in messages]
+        context = [
+            Message(
+                role=msg.role,
+                content=msg.content,
+                timestamp=msg.timestamp.isoformat(),
+                sources=msg.sources or [],
+                reasoning_steps=msg.reasoning_steps or []
+            )
+            for msg in messages
+        ]
         
         if req.context:
             context = req.context
@@ -127,8 +137,8 @@ async def llm_endpoint(req: LLMRequest, db: Session = Depends(get_db)):
         # Enhanced LLM call with Chain of Thought
         tool = LLMTool()
         answer, search_results, document_used, sources_used, metadata, reasoning_steps = tool.call(
-            req.prompt, 
-            context, 
+            req.prompt,
+            context,
             req.include_search,
             req.document_context,
             req.enable_source_attribution,
@@ -145,17 +155,27 @@ async def llm_endpoint(req: LLMRequest, db: Session = Depends(get_db)):
             reasoning_steps_dict = [step.dict() for step in reasoning_steps]
         
         # Save assistant message to database
-        add_message(db, req.conversation_id, "assistant", answer, sources_used, reasoning_steps_dict)
+        add_message(
+            db,
+            req.conversation_id,
+            "assistant",
+            answer,
+            sources_used,
+            reasoning_steps_dict
+        )
         
         # Get updated context
         updated_messages = get_conversation_messages(db, req.conversation_id)
-        updated_context = [Message(
-            role=msg.role,
-            content=msg.content,
-            timestamp=msg.timestamp.isoformat(),
-            sources=msg.sources or [],
-            reasoning_steps=msg.reasoning_steps or []
-        ) for msg in updated_messages]
+        updated_context = [
+            Message(
+                role=msg.role,
+                content=msg.content,
+                timestamp=msg.timestamp.isoformat(),
+                sources=msg.sources or [],
+                reasoning_steps=msg.reasoning_steps or []
+            )
+            for msg in updated_messages
+        ]
         
         return LLMResponse(
             response=answer,
@@ -169,7 +189,7 @@ async def llm_endpoint(req: LLMRequest, db: Session = Depends(get_db)):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
+    
 @app.post("/api/documents", response_model=DocumentResponse)
 async def upload_document(file: UploadFile = File(...), enable_chunking: bool = True, 
                          chunk_size: int = 2000, db: Session = Depends(get_db)):
@@ -229,7 +249,6 @@ async def get_conversation_endpoint(conversation_id: str, db: Session = Depends(
         }
     
     messages = get_conversation_messages(db, conversation_id)
-    
     return {
         "conversation_id": conversation.id,
         "title": conversation.title,
@@ -253,7 +272,6 @@ async def update_conversation_endpoint(conversation_id: str, title: str, db: Ses
     conversation = update_conversation_title(db, conversation_id, title)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    
     return conversation_to_dict(conversation)
 
 @app.delete("/api/conversations/{conversation_id}")
@@ -262,22 +280,19 @@ async def delete_conversation_endpoint(conversation_id: str, db: Session = Depen
     success = delete_conversation(db, conversation_id)
     if not success:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    
     return {"message": f"Conversation {conversation_id} deleted successfully"}
 
 @app.delete("/api/conversations")
 async def clear_all_conversations(db: Session = Depends(get_db)):
     """Clear all conversations (Clear History functionality)"""
     try:
-        conversations = get_conversations(db, limit=1000)  # Get all conversations
+        conversations = get_conversations(db, limit=1000)
         deleted_count = 0
-        
         for conversation in conversations:
             if delete_conversation(db, conversation.id):
                 deleted_count += 1
-        
         return {
-            "message": f"All conversations cleared successfully",
+            "message": "All conversations cleared successfully",
             "deleted_count": deleted_count
         }
     except Exception as e:
@@ -287,7 +302,6 @@ async def clear_all_conversations(db: Session = Depends(get_db)):
 async def get_conversation_state(conversation_id: str, db: Session = Depends(get_db)):
     """Get conversation state (exists, message count, etc.)"""
     conversation = get_conversation(db, conversation_id)
-    
     if not conversation:
         return {
             "exists": False,
@@ -297,9 +311,7 @@ async def get_conversation_state(conversation_id: str, db: Session = Depends(get
             "created_at": None,
             "updated_at": None
         }
-    
     messages = get_conversation_messages(db, conversation_id)
-    
     return {
         "exists": True,
         "conversation_id": conversation.id,
@@ -325,29 +337,63 @@ async def auto_generate_title(conversation_id: str, db: Session = Depends(get_db
     if not first_user_message:
         raise HTTPException(status_code=400, detail="No user messages found")
     
-    # Generate a short title from the first message (first 50 characters)
     content = first_user_message.content
     if len(content) > 50:
-        title = content[:47] + "..."
+        title = content[:47] + "."
     else:
         title = content
     
-    # Update conversation title
     conversation = update_conversation_title(db, conversation_id, title)
-    
     return {
         "conversation_id": conversation_id,
         "title": title,
         "message": "Title generated successfully"
     }
 
+# ====== NEW: Conversation Export Endpoint ======
+@app.get(
+    "/api/conversations/{conversation_id}/export",
+    response_model=ConversationExport
+)
+async def export_conversation_endpoint(conversation_id: str, db: Session = Depends(get_db)):
+    """
+    Export all messages for the given conversation_id as JSON.
+    Response schema (ConversationExport):
+      {
+        "conversation_id": string,
+        "messages": [ { … } ],
+        "export_time": ISO8601 timestamp,
+        "metadata": {
+          "total_messages": integer
+        }
+      }
+    """
+    # Ensure the conversation exists (but do NOT auto-create here)
+    conversation = get_conversation(db, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Load all messages for this conversation_id
+    messages = get_conversation_messages(db, conversation_id)
+    messages_list = [message_to_dict(msg) for msg in messages]  # :contentReference[oaicite:0]{index=0}
+
+    export_payload = {
+        "conversation_id": conversation_id,
+        "messages": messages_list,
+        "export_time": datetime.utcnow().isoformat() + "Z",
+        "metadata": {
+            "total_messages": len(messages_list)
+        }
+    }
+    return export_payload
+
 # ==================== DOCUMENT MANAGEMENT ====================
+
 
 @app.get("/api/documents")
 async def list_documents_endpoint(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """List all uploaded documents"""
     documents = get_documents(db, skip, limit)
-    
     docs_info = []
     for doc in documents:
         docs_info.append({
@@ -358,7 +404,6 @@ async def list_documents_endpoint(skip: int = 0, limit: int = 100, db: Session =
             "chunked": doc.chunks is not None,
             "chunk_count": len(doc.chunks) if doc.chunks else 0
         })
-    
     return {
         "documents": docs_info,
         "total_documents": len(documents)
@@ -370,7 +415,6 @@ async def get_document_endpoint(doc_id: str, db: Session = Depends(get_db)):
     document = get_document(db, doc_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
-    
     return document_to_dict(document)
 
 @app.delete("/api/documents/{doc_id}")
@@ -379,10 +423,8 @@ async def delete_document_endpoint(doc_id: str, db: Session = Depends(get_db)):
     document = get_document(db, doc_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
-    
     filename = document.filename
     success = delete_document(db, doc_id)
-    
     if success:
         return {"message": f"Document {filename} deleted successfully"}
     else:
@@ -396,7 +438,7 @@ async def clear_search_cache():
     cache_size = len(search_cache)
     search_cache.clear()
     return {
-        "message": f"Search cache cleared successfully",
+        "message": "Search cache cleared successfully",
         "items_cleared": cache_size
     }
 
@@ -404,16 +446,13 @@ async def clear_search_cache():
 async def get_cache_stats():
     """Get cache statistics"""
     from services import is_cache_valid
-    
     valid_entries = 0
     expired_entries = 0
-    
     for cache_key, (results, cache_time) in search_cache.items():
         if is_cache_valid(cache_time):
             valid_entries += 1
         else:
             expired_entries += 1
-    
     return {
         "total_entries": len(search_cache),
         "valid_entries": valid_entries,
@@ -429,113 +468,30 @@ async def generate_summary(req: SummaryRequest, db: Session = Depends(get_db)):
     conversation = get_conversation(db, req.conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    
     messages = get_conversation_messages(db, req.conversation_id)
     if not messages:
         raise HTTPException(status_code=400, detail="No messages in conversation")
-    
-    # Convert to Message objects for the generator
-    message_objects = [Message(
-        role=msg.role,
-        content=msg.content,
-        timestamp=msg.timestamp.isoformat(),
-        sources=msg.sources or [],
-        reasoning_steps=msg.reasoning_steps or []
-    ) for msg in messages]
-    
+    message_objects = [
+        Message(
+            role=msg.role,
+            content=msg.content,
+            timestamp=msg.timestamp.isoformat(),
+            sources=msg.sources or [],
+            reasoning_steps=msg.reasoning_steps or []
+        )
+        for msg in messages
+    ]
     generator = SummaryGenerator()
-    
-    if req.format_type == "bullet":
-        summary = generator.generate_bullet_summary(message_objects)
-    elif req.format_type == "executive":
-        summary = generator.generate_executive_summary(message_objects)
-    elif req.format_type == "academic":
-        summary = generator.generate_academic_summary(message_objects)
+    if req.format_id == "bullet":
+        summary_text = generator.generate_to_bullet_points(message_objects)
+    elif req.format_id == "executive":
+        summary_text = generator.generate_to_executive_summary(message_objects)
     else:
-        raise HTTPException(status_code=400, detail="Invalid format type. Use: bullet, executive, or academic")
-    
+        summary_text = generator.generate_to_academic_format(message_objects)
     return SummaryResponse(
         conversation_id=req.conversation_id,
-        format_type=req.format_type,
-        summary=summary,
-        generated_at=datetime.now().isoformat()
+        summary=summary_text
     )
-
-@app.post("/api/visualizations", response_model=VisualizationResponse)
-async def generate_visualization(req: VisualizationRequest, db: Session = Depends(get_db)):
-    """Generate visualization data from conversation"""
-    conversation = get_conversation(db, req.conversation_id)
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    
-    messages = get_conversation_messages(db, req.conversation_id)
-    if not messages:
-        raise HTTPException(status_code=400, detail="No messages in conversation")
-    
-    # Convert to Message objects for the generator
-    message_objects = [Message(
-        role=msg.role,
-        content=msg.content,
-        timestamp=msg.timestamp.isoformat(),
-        sources=msg.sources or [],
-        reasoning_steps=msg.reasoning_steps or []
-    ) for msg in messages]
-    
-    generator = VisualizationGenerator()
-    
-    if req.visualization_type == "concept_map":
-        data = generator.generate_concept_map_data(message_objects)
-    elif req.visualization_type == "timeline":
-        data = generator.generate_timeline_data(message_objects)
-    elif req.visualization_type == "comparison":
-        data = generator.generate_comparison_chart_data(message_objects)
-    else:
-        raise HTTPException(status_code=400, detail="Invalid visualization type. Use: concept_map, timeline, or comparison")
-    
-    return VisualizationResponse(
-        conversation_id=req.conversation_id,
-        visualization_type=req.visualization_type,
-        data=data,
-        generated_at=datetime.now().isoformat()
-    )
-
-# ==================== ANALYTICS & METADATA ====================
-
-@app.get("/api/analytics")
-async def get_analytics(db: Session = Depends(get_db)):
-    """Get usage analytics from database"""
-    conversations = get_conversations(db, limit=1000)  # Get all conversations
-    documents = get_documents(db, limit=1000)  # Get all documents
-    
-    total_messages = sum(len(conv.messages) for conv in conversations)
-    total_user_messages = sum(1 for conv in conversations for msg in conv.messages if msg.role == "user")
-    total_assistant_messages = sum(1 for conv in conversations for msg in conv.messages if msg.role == "assistant")
-    
-    messages_with_sources = sum(1 for conv in conversations for msg in conv.messages if msg.sources)
-    messages_with_reasoning = sum(1 for conv in conversations for msg in conv.messages if msg.reasoning_steps)
-    
-    return {
-        "conversations": {
-            "total_conversations": len(conversations),
-            "total_messages": total_messages,
-            "user_messages": total_user_messages,
-            "assistant_messages": total_assistant_messages
-        },
-        "features": {
-            "messages_with_sources": messages_with_sources,
-            "messages_with_reasoning": messages_with_reasoning,
-            "source_attribution_usage": f"{(messages_with_sources / max(1, total_assistant_messages)) * 100:.1f}%",
-            "reasoning_usage": f"{(messages_with_reasoning / max(1, total_assistant_messages)) * 100:.1f}%"
-        },
-        "documents": {
-            "total_documents": len(documents),
-            "total_content_length": sum(doc.content_length for doc in documents)
-        },
-        "cache": {
-            "search_cache_size": len(search_cache),
-            "cache_hit_rate": "N/A"
-        }
-    }
 
 @app.get("/api/summaries/formats")
 async def get_summary_formats():
@@ -547,6 +503,25 @@ async def get_summary_formats():
             {"id": "academic", "name": "Academic Format", "description": "Academic-style structured summary"}
         ]
     }
+
+@app.post("/api/visualizations", response_model=VisualizationResponse)
+async def generate_visualization(req: VisualizationRequest, db: Session = Depends(get_db)):
+    """Generate visualizations (e.g. concept map, timeline, comparison chart)"""
+    conversation = get_conversation(db, req.conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    messages = get_conversation_messages(db, req.conversation_id)
+    if not messages:
+        raise HTTPException(status_code=400, detail="No messages in conversation")
+    data = req.data or {}
+    generator = VisualizationGenerator()
+    content = generator.generate(req.visualization_type, data)
+    return VisualizationResponse(
+        conversation_id=req.conversation_id,
+        visualization_type=req.visualization_type,
+        data=content,
+        generated_at=datetime.now().isoformat()
+    )
 
 @app.get("/api/visualizations/types")
 async def get_visualization_types():
@@ -566,56 +541,55 @@ async def batch_llm_requests(requests: List[LLMRequest], db: Session = Depends(g
     """Process multiple LLM requests in batch"""
     if len(requests) > 10:
         raise HTTPException(status_code=400, detail="Maximum 10 requests per batch")
-    
+
     results = []
     tool = LLMTool()
     
     for req in requests:
         try:
-            # Get conversation context from database
             messages = get_conversation_messages(db, req.conversation_id)
-            context = [Message(
-                role=msg.role,
-                content=msg.content,
-                timestamp=msg.timestamp.isoformat(),
-                sources=msg.sources or [],
-                reasoning_steps=msg.reasoning_steps or []
-            ) for msg in messages]
+            context = [
+                Message(
+                    role=msg.role,
+                    content=msg.content,
+                    timestamp=msg.timestamp.isoformat(),
+                    sources=msg.sources or [],
+                    reasoning_steps=msg.reasoning_steps or []
+                )
+                for msg in messages
+            ]
             
             if req.context:
                 context = req.context
-            
+
             answer, search_results, document_used, sources_used, metadata, reasoning_steps = tool.call(
-                req.prompt, 
-                context, 
+                req.prompt,
+                context,
                 req.include_search,
                 req.document_context,
                 req.enable_source_attribution,
                 req.enable_chain_of_thought,
                 req.reasoning_depth
             )
-            
-            # Save user message to database
             add_message(db, req.conversation_id, "user", req.prompt)
-            
-            # Convert ReasoningStep objects to dictionaries for database storage
+
             reasoning_steps_dict = None
             if reasoning_steps:
                 reasoning_steps_dict = [step.dict() for step in reasoning_steps]
-            
-            # Save assistant message to database
             add_message(db, req.conversation_id, "assistant", answer, sources_used, reasoning_steps_dict)
-            
-            # Get updated context
+
             updated_messages = get_conversation_messages(db, req.conversation_id)
-            updated_context = [Message(
-                role=msg.role,
-                content=msg.content,
-                timestamp=msg.timestamp.isoformat(),
-                sources=msg.sources or [],
-                reasoning_steps=msg.reasoning_steps or []
-            ) for msg in updated_messages]
-            
+            updated_context = [
+                Message(
+                    role=msg.role,
+                    content=msg.content,
+                    timestamp=msg.timestamp.isoformat(),
+                    sources=msg.sources or [],
+                    reasoning_steps=msg.reasoning_steps or []
+                )
+                for msg in updated_messages
+            ]
+
             results.append({
                 "success": True,
                 "response": LLMResponse(
@@ -629,14 +603,12 @@ async def batch_llm_requests(requests: List[LLMRequest], db: Session = Depends(g
                     reasoning_steps=reasoning_steps
                 )
             })
-            
         except Exception as e:
             results.append({
                 "success": False,
                 "error": str(e),
                 "conversation_id": req.conversation_id
             })
-    
     return {"results": results, "processed_count": len(results)}
 
 # ==================== STARTUP AND SHUTDOWN ====================
@@ -644,7 +616,7 @@ async def batch_llm_requests(requests: List[LLMRequest], db: Session = Depends(g
 @app.on_event("startup")
 async def startup_event():
     """Initialize the application on startup"""
-    print("🚀 SynthesisTalk Backend v1.4.0 starting up...")
+    print("🚀 SynthesisTalk Backend v1.4.0 starting up.")
     print(f"📊 Web search enabled: {BRAVE_API_KEY is not None}")
     print(f"🧠 Chain of Thought reasoning: Enabled")
     print(f"📚 Document processing: Enabled")
@@ -656,7 +628,7 @@ async def startup_event():
     
     # Migrate existing in-memory data if any exists
     if conversations or document_contexts:
-        print("🔄 Migrating existing in-memory data...")
+        print("🔄 Migrating existing in-memory data.")
         migrate_in_memory_data(conversations, document_contexts)
         
         # Clear in-memory stores after migration
@@ -678,7 +650,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "main:app",
-        host="0.0.0.0", 
+        host="0.0.0.0",
         port=8000,
         reload=True,
         log_level="info"

@@ -1,12 +1,9 @@
+# models.py
+
 """
 SynthesisTalk Backend - Data Models & Storage
 ============================================
 Contains all Pydantic models, data structures, and in-memory storage.
-
-REFACTOR CHANGES:
-- Moved all Pydantic models from backend.py
-- Centralized data storage dictionaries
-- Added type hints and documentation
 """
 
 from typing import List, Dict, Optional, Tuple
@@ -15,10 +12,10 @@ from pydantic import BaseModel
 
 # ==================== PYDANTIC MODELS ====================
 
-class ReasoningStep(BaseModel):  # For Chain of Thought - MOVED UP before Message
+class ReasoningStep(BaseModel):
     step_number: int
     description: str
-    action: str  # "analyze", "search", "synthesize", "conclude"
+    action: str  # "analyze", "search", "synthesize", "conclude", etc.
     content: str
     sources_used: Optional[List[str]] = None
 
@@ -27,7 +24,7 @@ class Message(BaseModel):
     content: str
     timestamp: Optional[str] = None
     sources: Optional[List[str]] = None
-    reasoning_steps: Optional[List[ReasoningStep]] = None  # CHANGED: List[str] -> List[ReasoningStep]
+    reasoning_steps: Optional[List[ReasoningStep]] = None
 
 class SearchResult(BaseModel):
     title: str
@@ -63,8 +60,8 @@ class LLMRequest(BaseModel):
     include_search: bool = False
     document_context: Optional[str] = None
     enable_source_attribution: bool = True
-    enable_chain_of_thought: bool = False  # CoT toggle
-    reasoning_depth: int = 3  # How many reasoning steps
+    enable_chain_of_thought: bool = False
+    reasoning_depth: int = 3
 
 class LLMResponse(BaseModel):
     response: str
@@ -74,7 +71,7 @@ class LLMResponse(BaseModel):
     document_used: Optional[str] = None
     sources_used: Optional[List[str]] = None
     response_metadata: Optional[Dict] = None
-    reasoning_steps: Optional[List[ReasoningStep]] = None  # CoT steps
+    reasoning_steps: Optional[List[ReasoningStep]] = None
 
 class DocumentResponse(BaseModel):
     document_id: str
@@ -110,20 +107,13 @@ class VisualizationResponse(BaseModel):
     generated_at: str
 
 # ==================== DATA STORAGE ====================
+
 # In-memory storage for conversations, documents, and search cache
-
-# Conversations storage: {conversation_id: [Message, ...]}
 conversations: Dict[str, List[Message]] = {}
-
-# Document contexts storage: {doc_id: DocumentContext}
 document_contexts: Dict[str, DocumentContext] = {}
-
-# Search cache storage: {cache_key: (results, timestamp)}
 search_cache: Dict[str, Tuple[List[SearchResult], datetime]] = {}
 
 # ==================== CONSTANTS ====================
-
-# Default values and configuration
 DEFAULT_CHUNK_SIZE = 2000
 DEFAULT_CHUNK_OVERLAP = 200
 CACHE_MAX_AGE_HOURS = 24
